@@ -8,6 +8,7 @@ export default function TrialBalancePage() {
   const [data, setData] = useState<any>(null)
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
+  const [view, setView] = useState<'cr'|'full'>('cr')
 
   useEffect(() => {
     const API = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
@@ -20,12 +21,16 @@ export default function TrialBalancePage() {
     !search || l.ledger_name.toLowerCase().includes(search.toLowerCase())
   )
 
-  function fmt(val: number): string {
+  function fmtFull(val: number): string {
     return Math.abs(val).toLocaleString('en-IN', { minimumFractionDigits: 2 })
   }
 
   function fmtCr(val: number): string {
-    return `₹${(Math.abs(val) / 10000000).toFixed(2)} Cr`
+    return `${(Math.abs(val) / 10000000).toFixed(2)} Cr`
+  }
+
+  function fmt(val: number): string {
+    return view === 'cr' ? fmtCr(val) : fmtFull(val)
   }
 
   return (
@@ -56,10 +61,10 @@ export default function TrialBalancePage() {
       <div style={{ padding:'24px', fontFamily:'system-ui' }}>
 
         {/* Summary */}
-        <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr 1fr 1fr', gap:12, marginBottom:20 }}>
+        <div style={{ display:'grid', gridTemplateColumns:'repeat(4,1fr)', gap:12, marginBottom:20 }}>
           {[
-            { label:'Total Debit',        value: loading?'...':fmtCr(data?.total_dr),   color:'#2563EB' },
-            { label:'Total Credit',       value: loading?'...':fmtCr(data?.total_cr),   color:'#7C3AED' },
+            { label:'Total Debit',        value: loading?'...': `₹${fmtCr(data?.total_dr)}`, color:'#2563EB' },
+            { label:'Total Credit',       value: loading?'...': `₹${fmtCr(data?.total_cr)}`, color:'#7C3AED' },
             { label:'Difference',         value: loading?'...': `₹${data?.diff?.toFixed(2)}`, color: data?.diff===0?'#059669':'#DC2626' },
             { label:'Vouchers Processed', value: loading?'...': data?.total_vouchers_processed?.toLocaleString('en-IN'), color:'#0891B2' },
           ].map(k => (
@@ -70,14 +75,22 @@ export default function TrialBalancePage() {
           ))}
         </div>
 
-        {/* Search */}
-        <input
-          type="text"
-          placeholder="Search ledger name..."
-          value={search}
-          onChange={e => setSearch(e.target.value)}
-          style={{ width:'100%', padding:'9px 14px', borderRadius:8, border:'1px solid #E5E7EB', fontSize:13, outline:'none', marginBottom:16, boxSizing:'border-box' }}
-        />
+        {/* Search + toggle */}
+        <div style={{ display:'flex', gap:10, marginBottom:16 }}>
+          <input
+            type="text"
+            placeholder="Search ledger name..."
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            style={{ flex:1, padding:'9px 14px', borderRadius:8, border:'1px solid #E5E7EB', fontSize:13, outline:'none' }}
+          />
+          <button
+            onClick={() => setView(v => v==='cr'?'full':'cr')}
+            style={{ padding:'9px 16px', borderRadius:8, border:'1px solid #E5E7EB', background:'#fff', fontSize:12, fontWeight:600, cursor:'pointer', color:'#1F3864', whiteSpace:'nowrap' }}
+          >
+            {view==='cr' ? 'Show Full ₹' : 'Show in Cr'}
+          </button>
+        </div>
 
         {loading && (
           <div style={{ background:'#EFF6FF', border:'1px solid #BFDBFE', borderRadius:10, padding:'16px 20px', marginBottom:16, fontSize:12, color:'#1D4ED8', fontWeight:600 }}>
@@ -85,69 +98,75 @@ export default function TrialBalancePage() {
           </div>
         )}
 
-        {/* Table */}
         {!loading && (
           <div style={{ background:'#fff', border:'1px solid #E5E7EB', borderRadius:12, overflow:'hidden' }}>
             <div style={{ background:'#1F3864', padding:'12px 20px', color:'#fff', fontWeight:700, fontSize:13, display:'flex', justifyContent:'space-between' }}>
-              <span>Trial Balance — FY 2025-26 · {lines.length} ledgers shown</span>
-              <span style={{ fontSize:11, opacity:.7 }}>Real data · 30,490 vouchers</span>
+              <span>Trial Balance — FY 2025-26 · {lines.length} ledgers</span>
+              <span style={{ fontSize:11, opacity:.7 }}>Amounts in {view==='cr'?'Crores':'₹'} · TB001 {data?.tb001_status}</span>
             </div>
-            <div style={{ overflowX:'auto' }}>
-              <table style={{ width:'100%', borderCollapse:'collapse', fontSize:12, minWidth:800 }}>
-                <thead>
-                  <tr style={{ background:'#F8FAFC' }}>
-                    <th style={{ padding:'10px 16px', textAlign:'left', fontSize:10, fontWeight:700, color:'#6B7280', textTransform:'uppercase', borderBottom:'1px solid #E5E7EB', width:40 }}>#</th>
-                    <th style={{ padding:'10px 16px', textAlign:'left', fontSize:10, fontWeight:700, color:'#6B7280', textTransform:'uppercase', borderBottom:'1px solid #E5E7EB' }}>Ledger Name</th>
-                    <th style={{ padding:'10px 16px', textAlign:'right', fontSize:10, fontWeight:700, color:'#6B7280', textTransform:'uppercase', borderBottom:'1px solid #E5E7EB', width:200 }}>Total Debit (₹)</th>
-                    <th style={{ padding:'10px 16px', textAlign:'right', fontSize:10, fontWeight:700, color:'#6B7280', textTransform:'uppercase', borderBottom:'1px solid #E5E7EB', width:200 }}>Total Credit (₹)</th>
-                    <th style={{ padding:'10px 16px', textAlign:'right', fontSize:10, fontWeight:700, color:'#6B7280', textTransform:'uppercase', borderBottom:'1px solid #E5E7EB', width:180 }}>Net (₹)</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {lines.map((line: any, i: number) => (
-                    <tr key={i} style={{ borderBottom:'0.5px solid #F3F4F6', background: i%2===0?'#fff':'#FAFAFA' }}>
-                      <td style={{ padding:'9px 16px', color:'#9CA3AF', fontSize:11 }}>{i+1}</td>
-                      <td style={{ padding:'9px 16px', fontWeight:500, color:'#1F3864' }}>{line.ledger_name}</td>
-                      <td style={{ padding:'9px 16px', textAlign:'right', fontFamily:'monospace', fontSize:12 }}>
-                        {line.total_debit > 0 ? fmt(line.total_debit) : '—'}
-                      </td>
-                      <td style={{ padding:'9px 16px', textAlign:'right', fontFamily:'monospace', fontSize:12 }}>
-                        {line.total_credit > 0 ? fmt(line.total_credit) : '—'}
-                      </td>
-                      <td style={{ padding:'9px 16px', textAlign:'right', fontFamily:'monospace', fontSize:12, fontWeight:600,
-                        color: line.net > 0 ? '#1F3864' : line.net < 0 ? '#DC2626' : '#6B7280'
-                      }}>
-                        {line.net !== 0 ? fmt(Math.abs(line.net)) + (line.net < 0 ? ' Cr' : ' Dr') : '—'}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-                <tfoot>
-                  <tr style={{ background:'#1F3864' }}>
-                    <td colSpan={2} style={{ padding:'12px 16px', color:'#fff', fontWeight:700, fontSize:13 }}>
-                      TOTAL ({data?.ledger_count} ledgers)
+            <table style={{ width:'100%', borderCollapse:'collapse', fontSize:12, tableLayout:'fixed' }}>
+              <colgroup>
+                <col style={{ width:'36px' }} />
+                <col style={{ width:'40%' }} />
+                <col style={{ width:'20%' }} />
+                <col style={{ width:'20%' }} />
+                <col style={{ width:'20%' }} />
+              </colgroup>
+              <thead>
+                <tr style={{ background:'#F8FAFC' }}>
+                  <th style={{ padding:'10px 12px', textAlign:'left', fontSize:10, fontWeight:700, color:'#6B7280', textTransform:'uppercase', borderBottom:'1px solid #E5E7EB' }}>#</th>
+                  <th style={{ padding:'10px 12px', textAlign:'left', fontSize:10, fontWeight:700, color:'#6B7280', textTransform:'uppercase', borderBottom:'1px solid #E5E7EB' }}>Ledger Name</th>
+                  <th style={{ padding:'10px 12px', textAlign:'right', fontSize:10, fontWeight:700, color:'#6B7280', textTransform:'uppercase', borderBottom:'1px solid #E5E7EB' }}>Debit</th>
+                  <th style={{ padding:'10px 12px', textAlign:'right', fontSize:10, fontWeight:700, color:'#6B7280', textTransform:'uppercase', borderBottom:'1px solid #E5E7EB' }}>Credit</th>
+                  <th style={{ padding:'10px 12px', textAlign:'right', fontSize:10, fontWeight:700, color:'#6B7280', textTransform:'uppercase', borderBottom:'1px solid #E5E7EB' }}>Net</th>
+                </tr>
+              </thead>
+              <tbody>
+                {lines.map((line: any, i: number) => (
+                  <tr key={i} style={{ borderBottom:'0.5px solid #F3F4F6', background: i%2===0?'#fff':'#FAFAFA' }}>
+                    <td style={{ padding:'8px 12px', color:'#9CA3AF', fontSize:11 }}>{i+1}</td>
+                    <td style={{ padding:'8px 12px', fontWeight:500, color:'#1F3864', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }} title={line.ledger_name}>
+                      {line.ledger_name}
                     </td>
-                    <td style={{ padding:'12px 16px', textAlign:'right', fontFamily:'monospace', color:'#fff', fontWeight:700, fontSize:13 }}>
-                      {fmt(data?.total_dr)}
+                    <td style={{ padding:'8px 12px', textAlign:'right', fontFamily:'monospace', fontSize:11 }}>
+                      {line.total_debit > 0 ? fmt(line.total_debit) : '—'}
                     </td>
-                    <td style={{ padding:'12px 16px', textAlign:'right', fontFamily:'monospace', color:'#fff', fontWeight:700, fontSize:13 }}>
-                      {fmt(data?.total_cr)}
+                    <td style={{ padding:'8px 12px', textAlign:'right', fontFamily:'monospace', fontSize:11 }}>
+                      {line.total_credit > 0 ? fmt(line.total_credit) : '—'}
                     </td>
-                    <td style={{ padding:'12px 16px', textAlign:'right', fontFamily:'monospace', fontWeight:700, fontSize:13,
-                      color: data?.diff===0 ? '#A7F3D0' : '#FCA5A5'
+                    <td style={{ padding:'8px 12px', textAlign:'right', fontFamily:'monospace', fontSize:11, fontWeight:600,
+                      color: line.net > 0 ? '#1D4ED8' : line.net < 0 ? '#DC2626' : '#6B7280'
                     }}>
-                      {data?.diff===0 ? '✓ ₹0.00' : `⚠ ₹${data?.diff}`}
+                      {line.net !== 0 ? fmt(Math.abs(line.net)) + (line.net < 0 ? ' Cr' : ' Dr') : '—'}
                     </td>
                   </tr>
-                </tfoot>
-              </table>
-            </div>
+                ))}
+              </tbody>
+              <tfoot>
+                <tr style={{ background:'#1F3864' }}>
+                  <td colSpan={2} style={{ padding:'10px 12px', color:'#fff', fontWeight:700 }}>
+                    TOTAL — {data?.ledger_count} ledgers
+                  </td>
+                  <td style={{ padding:'10px 12px', textAlign:'right', fontFamily:'monospace', color:'#fff', fontWeight:700 }}>
+                    {fmt(data?.total_dr)}
+                  </td>
+                  <td style={{ padding:'10px 12px', textAlign:'right', fontFamily:'monospace', color:'#fff', fontWeight:700 }}>
+                    {fmt(data?.total_cr)}
+                  </td>
+                  <td style={{ padding:'10px 12px', textAlign:'right', fontFamily:'monospace', fontWeight:700,
+                    color: data?.diff===0 ? '#A7F3D0' : '#FCA5A5'
+                  }}>
+                    {data?.diff===0 ? '✓ 0.00' : `⚠ ${data?.diff}`}
+                  </td>
+                </tr>
+              </tfoot>
+            </table>
           </div>
         )}
 
         {!loading && (
           <div style={{ marginTop:12, background:'#ECFDF5', border:'1px solid #A7F3D0', borderRadius:10, padding:'12px 16px', fontSize:11, color:'#059669' }}>
-            ✓ TB001 PASS — Total DR ₹{fmtCr(data?.total_dr)} = Total CR ₹{fmtCr(data?.total_cr)} — Difference ₹{data?.diff?.toFixed(2)} — All 30,490 real vouchers processed
+            ✓ TB001 PASS — DR ₹{fmtCr(data?.total_dr)} = CR ₹{fmtCr(data?.total_cr)} — Diff ₹{data?.diff?.toFixed(2)} — {data?.total_vouchers_processed?.toLocaleString('en-IN')} vouchers
           </div>
         )}
 
