@@ -12,6 +12,7 @@ export default function UploadPage() {
   const [error, setError] = useState('')
   const [dragging, setDragging] = useState(false)
   const pollRef = useRef<any>(null)
+  const [uploadId, setUploadId] = useState<string>("")
 
   const handleDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault()
@@ -65,8 +66,27 @@ export default function UploadPage() {
         return
       }
 
+      const uid = data.upload_id
       setStep('parsing')
-      pollStatus(data.upload_id, API)
+
+      // Poll with captured upload_id
+      if (pollRef.current) clearInterval(pollRef.current)
+      pollRef.current = setInterval(async () => {
+        try {
+          const r = await fetch(`${API}/api/upload-status/${uid}`)
+          const d = await r.json()
+          setStatus(d)
+          if (d.status === 'parsed') {
+            clearInterval(pollRef.current)
+            setResult(d)
+            setStep('done')
+          } else if (d.status === 'error') {
+            clearInterval(pollRef.current)
+            setError(d.error_message || 'Parse failed')
+            setStep('error')
+          }
+        } catch (e) {}
+      }, 3000)
 
     } catch (err: any) {
       setError(err.message || 'Upload failed')
