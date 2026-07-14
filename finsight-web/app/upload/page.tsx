@@ -1,18 +1,44 @@
 'use client'
-import { useState, useCallback, useRef } from 'react'
+import { useState, useCallback, useEffect, useRef } from 'react'
 import Layout from '../../components/Layout'
-
-type Step = 'idle' | 'uploading' | 'parsing' | 'done' | 'error'
 
 export default function UploadPage() {
   const [file, setFile] = useState<File | null>(null)
-  const [step, setStep] = useState<Step>('idle')
+  const [step, setStep] = useState<'idle'|'uploading'|'parsing'|'done'|'error'>('idle')
   const [result, setResult] = useState<any>(null)
-  const [status, setStatus] = useState<any>(null)
   const [error, setError] = useState('')
   const [dragging, setDragging] = useState(false)
-  const pollRef = useRef<any>(null)
-  const [uploadId, setUploadId] = useState<string>("")
+  const [uploadId, setUploadId] = useState('')
+  const [pollCount, setPollCount] = useState(0)
+
+  const API = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
+
+  // Poll when uploadId is set and step is parsing
+  useEffect(() => {
+    if (!uploadId || step !== 'parsing') return
+
+    const interval = setInterval(async () => {
+      try {
+        const res = await fetch(`${API}/api/upload-status/${uploadId}`)
+        const data = await res.json()
+        setPollCount(c => c + 1)
+
+        if (data.status === 'parsed') {
+          clearInterval(interval)
+          setResult(data)
+          setStep('done')
+        } else if (data.status === 'error') {
+          clearInterval(interval)
+          setError(data.error_message || 'Parse failed')
+          setStep('error')
+        }
+      } catch (e) {
+        // keep polling
+      }
+    }, 3000)
+
+    return () => clearInterval(interval)
+  }, [uploadId, step])
 
   const handleDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault()
@@ -21,38 +47,17 @@ export default function UploadPage() {
     if (f) setFile(f)
   }, [])
 
-  const pollStatus = (uploadId: string, API: string) => {
-    pollRef.current = setInterval(async () => {
-      try {
-        const res = await fetch(`${API}/api/upload-status/${uploadId}`)
-        const data = await res.json()
-        setStatus(data)
-        if (data.status === 'parsed') {
-          clearInterval(pollRef.current)
-          setResult(data)
-          setStep('done')
-        } else if (data.status === 'error') {
-          clearInterval(pollRef.current)
-          setError(data.error_message || 'Parse failed')
-          setStep('error')
-        }
-      } catch (e) {
-        // keep polling
-      }
-    }, 3000) // poll every 3 seconds
-  }
-
   const runUpload = async () => {
     if (!file) return
     setStep('uploading')
     setError('')
     setResult(null)
-    setStatus(null)
+    setUploadId('')
+    setPollCount(0)
 
     try {
       const formData = new FormData()
       formData.append('file', file)
-      const API = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
 
       const res = await fetch(`${API}/api/upload-async`, {
         method: 'POST',
@@ -66,40 +71,14 @@ export default function UploadPage() {
         return
       }
 
-      const uid = data.upload_id
+      setUploadId(data.upload_id)
       setStep('parsing')
 
-      // Poll with captured upload_id
-      if (pollRef.current) clearInterval(pollRef.current)
-      pollRef.current = setInterval(async () => {
-        try {
-          const r = await fetch(`${API}/api/upload-status/${uid}`)
-          const d = await r.json()
-          setStatus(d)
-          if (d.status === 'parsed') {
-            clearInterval(pollRef.current)
-            setResult(d)
-            setStep('done')
-          } else if (d.status === 'error') {
-            clearInterval(pollRef.current)
-            setError(d.error_message || 'Parse failed')
-            setStep('error')
-          }
-        } catch (e) {}
-      }, 3000)
-
     } catch (err: any) {
-      setError(err.message || 'Upload failed')
+      setError(err.message || 'Upload failed — check API connection')
       setStep('error')
     }
   }
-
-  const STEPS = [
-    { key:'uploading', label:'Upload' },
-    { key:'parsing',   label:'Parse & Save' },
-    { key:'done',      label:'Done' },
-  ]
-  const stepIdx = STEPS.findIndex(s => s.key === step)
 
   return (
     <Layout>
@@ -124,7 +103,10 @@ export default function UploadPage() {
           }}
         >
           <input id="file-input" type="file" accept=".xls,.xlsx,.csv" style={{ display:'none' }}
-            onChange={e => { const f=e.target.files?.[0]; if(f){setFile(f);setStep('idle');setResult(null);setError('')} }}
+            onChange={e => {
+              const f = e.target.files?.[0]
+              if (f) { setFile(f); setStep('idle'); setResult(null); setError(''); setUploadId('') }
+            }}
           />
           {file ? (
             <>
@@ -149,45 +131,28 @@ export default function UploadPage() {
           </button>
         )}
 
-        {/* Pipeline steps */}
-        {step !== 'idle' && step !== 'error' && (
-          <div style={{ background:'#fff', border:'1px solid #E5E7EB', borderRadius:12, padding:'20px 24px', marginBottom:16 }}>
-            <div style={{ fontWeight:700, color:'#1F3864', fontSize:13, marginBottom:20 }}>Pipeline Status</div>
-            <div style={{ display:'flex', alignItems:'center', marginBottom:16 }}>
-              {STEPS.map((s, i) => {
-                const done = step==='done' || stepIdx > i
-                const active = STEPS[stepIdx]?.key === s.key
-                return (
-                  <div key={s.key} style={{ display:'flex', alignItems:'center', flex: i<2?1:0 }}>
-                    <div style={{ textAlign:'center' }}>
-                      <div style={{ width:36, height:36, borderRadius:'50%', margin:'0 auto 6px', background:done?'#059669':active?'#2563EB':'#F3F4F6', display:'flex', alignItems:'center', justifyContent:'center', fontSize:13, fontWeight:700, color:done||active?'#fff':'#9CA3AF', transition:'all .3s' }}>
-                        {done ? '✓' : i+1}
-                      </div>
-                      <div style={{ fontSize:10, fontWeight:600, color:done?'#059669':active?'#2563EB':'#9CA3AF' }}>{s.label}</div>
-                    </div>
-                    {i<2 && <div style={{ flex:1, height:2, background:done&&stepIdx>i?'#059669':'#F3F4F6', margin:'0 8px', marginBottom:20, transition:'all .3s' }}/>}
-                  </div>
-                )
-              })}
-            </div>
+        {/* Uploading */}
+        {step === 'uploading' && (
+          <div style={{ background:'#EFF6FF', border:'1px solid #BFDBFE', borderRadius:12, padding:'24px', textAlign:'center', marginBottom:16 }}>
+            <div style={{ fontSize:32, marginBottom:8 }}>⏳</div>
+            <div style={{ fontSize:14, fontWeight:700, color:'#1D4ED8' }}>Uploading {file?.name}...</div>
+          </div>
+        )}
 
-            {/* Status details */}
-            {step === 'uploading' && (
-              <div style={{ background:'#EFF6FF', borderRadius:8, padding:'10px 14px', fontSize:12, color:'#1D4ED8' }}>
-                ⏳ Uploading {file?.name}...
+        {/* Parsing */}
+        {step === 'parsing' && (
+          <div style={{ background:'#EFF6FF', border:'1px solid #BFDBFE', borderRadius:12, padding:'24px', marginBottom:16 }}>
+            <div style={{ display:'flex', alignItems:'center', gap:12, marginBottom:12 }}>
+              <div style={{ fontSize:24 }}>⚙️</div>
+              <div>
+                <div style={{ fontSize:14, fontWeight:700, color:'#1D4ED8' }}>Parsing and saving to Supabase...</div>
+                <div style={{ fontSize:12, color:'#6B7280', marginTop:2 }}>Upload ID: {uploadId}</div>
               </div>
-            )}
-            {step === 'parsing' && (
-              <div style={{ background:'#EFF6FF', borderRadius:8, padding:'10px 14px', fontSize:12, color:'#1D4ED8' }}>
-                ⏳ Parsing 59,007 rows and saving to Supabase... This takes 2-3 minutes for large files. Page will update automatically.
-                {status && (
-                  <div style={{ marginTop:6, fontSize:11, color:'#374151' }}>
-                    Status: <strong>{status.status}</strong>
-                    {status.voucher_count && ` · ${status.voucher_count?.toLocaleString('en-IN')} vouchers parsed`}
-                  </div>
-                )}
-              </div>
-            )}
+            </div>
+            <div style={{ background:'#DBEAFE', borderRadius:8, padding:'10px 14px', fontSize:12, color:'#1D4ED8' }}>
+              Polling status every 3 seconds... (check #{pollCount})<br/>
+              Large files (2-3 MB) take 15-30 seconds to parse.
+            </div>
           </div>
         )}
 
@@ -195,8 +160,10 @@ export default function UploadPage() {
         {step === 'error' && (
           <div style={{ background:'#FEF2F2', border:'1px solid #FCA5A5', borderRadius:12, padding:'16px 20px', marginBottom:16 }}>
             <div style={{ fontWeight:700, color:'#DC2626', marginBottom:4 }}>Upload failed</div>
-            <div style={{ fontSize:12, color:'#DC2626' }}>{error}</div>
-            <button onClick={() => { setStep('idle'); setError('') }} style={{ marginTop:10, background:'#DC2626', color:'#fff', border:'none', borderRadius:7, padding:'6px 16px', fontSize:12, fontWeight:600, cursor:'pointer' }}>Try again</button>
+            <div style={{ fontSize:12, color:'#DC2626', marginBottom:8 }}>{error}</div>
+            <button onClick={() => { setStep('idle'); setError('') }} style={{ background:'#DC2626', color:'#fff', border:'none', borderRadius:7, padding:'6px 16px', fontSize:12, fontWeight:600, cursor:'pointer' }}>
+              Try again
+            </button>
           </div>
         )}
 
@@ -218,10 +185,16 @@ export default function UploadPage() {
                 </div>
               ))}
             </div>
+            <div style={{ fontSize:11, color:'#6B7280', marginBottom:16 }}>
+              Upload ID: <code style={{ background:'#fff', padding:'1px 6px', borderRadius:4, color:'#111' }}>{uploadId}</code>
+            </div>
             <div style={{ display:'flex', gap:10, flexWrap:'wrap' }}>
               <a href="/dashboard" style={{ background:'#1F3864', color:'#fff', padding:'10px 20px', borderRadius:8, textDecoration:'none', fontWeight:600, fontSize:13 }}>Open CFO Dashboard →</a>
               <a href="/reports/trial" style={{ background:'#fff', color:'#1F3864', padding:'10px 20px', borderRadius:8, textDecoration:'none', fontWeight:600, fontSize:13, border:'1px solid #1F3864' }}>Trial Balance →</a>
-              <button onClick={() => { setFile(null); setStep('idle'); setResult(null) }} style={{ background:'#fff', color:'#6B7280', padding:'10px 20px', borderRadius:8, border:'1px solid #E5E7EB', fontWeight:600, fontSize:13, cursor:'pointer' }}>Upload Another</button>
+              <button onClick={() => { setFile(null); setStep('idle'); setResult(null); setUploadId('') }}
+                style={{ background:'#fff', color:'#6B7280', padding:'10px 20px', borderRadius:8, border:'1px solid #E5E7EB', fontWeight:600, fontSize:13, cursor:'pointer' }}>
+                Upload Another
+              </button>
             </div>
           </div>
         )}
