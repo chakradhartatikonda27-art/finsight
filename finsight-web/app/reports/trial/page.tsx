@@ -25,11 +25,11 @@ export default function TrialBalancePage() {
     !search || l.ledger_name.toLowerCase().includes(search.toLowerCase())
   )
 
-  const cr = (v: number) => v > 0 ? `${(v / 10000000).toFixed(2)} Cr` : '—'
+  const cr = (v: number) => v > 0 ? v.toLocaleString('en-IN', { minimumFractionDigits: 2 }) : '—'
   const netFmt = (v: number) => {
     if (v === 0) return { text: '—', color: GREY }
     return {
-      text: `${(Math.abs(v) / 10000000).toFixed(2)} Cr ${v < 0 ? 'CR' : 'DR'}`,
+      text: Math.abs(v).toLocaleString('en-IN', { minimumFractionDigits: 2 }) + (v < 0 ? ' CR' : ' DR'),
       color: v < 0 ? RED : BLUE
     }
   }
@@ -40,7 +40,7 @@ export default function TrialBalancePage() {
         <div>
           <span style={{ fontWeight:700, color:'#1F3864', fontSize:14 }}>Trial Balance</span>
           <span style={{ color:GREY, fontSize:12, marginLeft:12 }}>
-            {loading ? 'Loading...' : `${data?.ledger_count} ledgers · ${data?.total_vouchers_processed?.toLocaleString('en-IN')} vouchers · Amounts in Crores`}
+            {loading ? 'Loading...' : `${data?.ledger_count} ledgers · ${data?.total_vouchers_processed?.toLocaleString('en-IN')} vouchers · Full figures in ₹`}
           </span>
         </div>
         {!loading && (
@@ -54,8 +54,8 @@ export default function TrialBalancePage() {
 
         <div style={{ display:'grid', gridTemplateColumns:'repeat(4,1fr)', gap:12, marginBottom:20 }}>
           {[
-            { label:'Total Debit',        value: loading?'...': `₹${(data?.total_dr/10000000).toFixed(2)} Cr`, color:'#2563EB' },
-            { label:'Total Credit',       value: loading?'...': `₹${(data?.total_cr/10000000).toFixed(2)} Cr`, color:'#7C3AED' },
+            { label:'Total Debit',        value: loading?'...': `₹${data?.total_dr?.toLocaleString('en-IN', { minimumFractionDigits: 2 })}`, color:'#2563EB' },
+            { label:'Total Credit',       value: loading?'...': `₹${data?.total_cr?.toLocaleString('en-IN', { minimumFractionDigits: 2 })}`, color:'#7C3AED' },
             { label:'Difference',         value: loading?'...': `₹${data?.diff?.toFixed(2)}`,                  color: data?.diff===0?'#059669':'#DC2626' },
             { label:'Vouchers Processed', value: loading?'...': data?.total_vouchers_processed?.toLocaleString('en-IN'), color:'#0891B2' },
           ].map(k => (
@@ -84,7 +84,7 @@ export default function TrialBalancePage() {
           <div style={{ background:'#fff', border:'1px solid #E5E7EB', borderRadius:12, overflow:'hidden' }}>
             <div style={{ background:'#1F3864', padding:'12px 20px', color:'#fff', fontWeight:700, fontSize:13, display:'flex', justifyContent:'space-between' }}>
               <span>Trial Balance — FY 2025-26 · {lines.length} ledgers</span>
-              <span style={{ fontSize:11, opacity:.7 }}>All amounts in ₹ Crores</span>
+              <span style={{ fontSize:11, opacity:.7 }}>All amounts in full ₹</span>
             </div>
             <table style={{ width:'100%', borderCollapse:'collapse', fontSize:13, tableLayout:'fixed' }}>
               <colgroup>
@@ -127,10 +127,10 @@ export default function TrialBalancePage() {
                 <tr style={{ background:'#1F3864' }}>
                   <td colSpan={2} style={{ padding:'10px 12px', color:'#fff', fontWeight:700, background:'#1F3864' }}>TOTAL — {data?.ledger_count} ledgers</td>
                   <td style={{ padding:'10px 12px', textAlign:'right', fontFamily:'monospace', color:'#fff', fontWeight:700, background:'#1F3864' }}>
-                    {(data?.total_dr/10000000).toFixed(2)} Cr
+                    {data?.total_dr?.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                   </td>
                   <td style={{ padding:'10px 12px', textAlign:'right', fontFamily:'monospace', color:'#fff', fontWeight:700, background:'#1F3864' }}>
-                    {(data?.total_cr/10000000).toFixed(2)} Cr
+                    {data?.total_cr?.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                   </td>
                   <td style={{ padding:'10px 12px', textAlign:'right', fontFamily:'monospace', fontWeight:700, background:'#1F3864', color: data?.diff===0?'#A7F3D0':'#FCA5A5' }}>
                     {data?.diff===0 ? '✓ 0.00' : `⚠ ${data?.diff}`}
@@ -143,7 +143,7 @@ export default function TrialBalancePage() {
 
         {!loading && (
           <div style={{ marginTop:12, background:'#ECFDF5', border:'1px solid #A7F3D0', borderRadius:10, padding:'12px 16px', fontSize:11, color:'#059669' }}>
-            ✓ TB001 PASS — DR ₹{(data?.total_dr/10000000).toFixed(2)} Cr = CR ₹{(data?.total_cr/10000000).toFixed(2)} Cr — Diff ₹{data?.diff?.toFixed(2)}
+            ✓ TB001 PASS — DR ₹{data?.total_dr?.toLocaleString('en-IN', { minimumFractionDigits: 2 })} = CR ₹{data?.total_cr?.toLocaleString('en-IN', { minimumFractionDigits: 2 })} — Diff ₹{data?.diff?.toFixed(2)}
           </div>
         )}
       </div>
