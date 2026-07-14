@@ -125,22 +125,22 @@ export default function DayBookPage() {
               </thead>
               <tbody>
                 {vouchers.map((v: any) => (
-                  <tr key={v.id} style={{ borderBottom:'1px solid #F3F4F6', background: VCH_COLORS[v.voucher_type] || '#fff' }}>
-                    <td style={{ padding:'8px 10px', fontSize:11, color:DARK, background: VCH_COLORS[v.voucher_type] || '#fff', whiteSpace:'nowrap' }}>{v.txn_date}</td>
-                    <td style={{ padding:'8px 10px', fontWeight:500, color:'#1F3864', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', background: VCH_COLORS[v.voucher_type] || '#fff' }} title={v.ledger_name}>
+                  <tr key={v.id} style={{ borderBottom:'1px solid #F3F4F6', background: '#fff' }}>
+                    <td style={{ padding:'8px 10px', fontSize:11, color:DARK, background: '#fff', whiteSpace:'nowrap' }}>{v.txn_date}</td>
+                    <td style={{ padding:'8px 10px', fontWeight:500, color:'#1F3864', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', background: '#fff' }} title={v.ledger_name}>
                       {v.ledger_name}
                     </td>
-                    <td style={{ padding:'8px 10px', background: VCH_COLORS[v.voucher_type] || '#fff' }}>
+                    <td style={{ padding:'8px 10px', background: '#fff' }}>
                       <span style={{ fontSize:10, fontWeight:600, padding:'2px 7px', borderRadius:20, background:'rgba(0,0,0,0.06)', color:DARK }}>
                         {v.voucher_type}
                       </span>
                     </td>
-                    <td style={{ padding:'8px 10px', fontSize:11, color:GREY, fontFamily:'monospace', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', background: VCH_COLORS[v.voucher_type] || '#fff' }}>{v.voucher_no}</td>
-                    <td style={{ padding:'8px 10px', fontSize:11, color:GREY, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', background: VCH_COLORS[v.voucher_type] || '#fff' }}>{v.cost_centre || '—'}</td>
-                    <td style={{ padding:'8px 10px', textAlign:'right', fontFamily:'monospace', fontSize:11, color: v.debit>0?DARK:GREY, fontWeight: v.debit>0?600:400, background: VCH_COLORS[v.voucher_type] || '#fff' }}>
+                    <td style={{ padding:'8px 10px', fontSize:11, color:GREY, fontFamily:'monospace', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', background: '#fff' }}>{v.voucher_no}</td>
+                    <td style={{ padding:'8px 10px', fontSize:11, color:GREY, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', background: '#fff' }}>{v.cost_centre || '—'}</td>
+                    <td style={{ padding:'8px 10px', textAlign:'right', fontFamily:'monospace', fontSize:11, color: v.debit>0?DARK:GREY, fontWeight: v.debit>0?600:400, background: '#fff' }}>
                       {fmtINR(v.debit)}
                     </td>
-                    <td style={{ padding:'8px 10px', textAlign:'right', fontFamily:'monospace', fontSize:11, color: v.credit>0?'#059669':GREY, fontWeight: v.credit>0?600:400, background: VCH_COLORS[v.voucher_type] || '#fff' }}>
+                    <td style={{ padding:'8px 10px', textAlign:'right', fontFamily:'monospace', fontSize:11, color: v.credit>0?'#059669':GREY, fontWeight: v.credit>0?600:400, background: '#fff' }}>
                       {fmtINR(v.credit)}
                     </td>
                   </tr>
