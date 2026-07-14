@@ -9,6 +9,19 @@ const BLUE = '#1D4ED8'
 const RED  = '#DC2626'
 const GREY = '#6B7280'
 
+function fmtINR(v: number): string {
+  if (!v || v === 0) return '—'
+  return v.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+}
+
+function fmtNet(v: number): { text: string; color: string } {
+  if (v === 0) return { text: '—', color: GREY }
+  return {
+    text: fmtINR(Math.abs(v)) + (v < 0 ? ' CR' : ' DR'),
+    color: v < 0 ? RED : BLUE
+  }
+}
+
 export default function TrialBalancePage() {
   const [data, setData] = useState<any>(null)
   const [loading, setLoading] = useState(true)
@@ -25,22 +38,13 @@ export default function TrialBalancePage() {
     !search || l.ledger_name.toLowerCase().includes(search.toLowerCase())
   )
 
-  const cr = (v: number) => v > 0 ? v.toLocaleString('en-IN', { minimumFractionDigits: 2 }) : '—'
-  const netFmt = (v: number) => {
-    if (v === 0) return { text: '—', color: GREY }
-    return {
-      text: Math.abs(v).toLocaleString('en-IN', { minimumFractionDigits: 2 }) + (v < 0 ? ' CR' : ' DR'),
-      color: v < 0 ? RED : BLUE
-    }
-  }
-
   return (
     <Layout>
       <div style={{ background:'#fff', borderBottom:'1px solid #E5E7EB', padding:'0 24px', height:52, display:'flex', alignItems:'center', justifyContent:'space-between', fontFamily:'system-ui', position:'sticky', top:0, zIndex:40 }}>
         <div>
           <span style={{ fontWeight:700, color:'#1F3864', fontSize:14 }}>Trial Balance</span>
           <span style={{ color:GREY, fontSize:12, marginLeft:12 }}>
-            {loading ? 'Loading...' : `${data?.ledger_count} ledgers · ${data?.total_vouchers_processed?.toLocaleString('en-IN')} vouchers · Full figures in ₹`}
+            {loading ? 'Loading...' : `${data?.ledger_count} ledgers · ${data?.total_vouchers_processed?.toLocaleString('en-IN')} vouchers`}
           </span>
         </div>
         {!loading && (
@@ -54,14 +58,14 @@ export default function TrialBalancePage() {
 
         <div style={{ display:'grid', gridTemplateColumns:'repeat(4,1fr)', gap:12, marginBottom:20 }}>
           {[
-            { label:'Total Debit',        value: loading?'...': `₹${data?.total_dr?.toLocaleString('en-IN', { minimumFractionDigits: 2 })}`, color:'#2563EB' },
-            { label:'Total Credit',       value: loading?'...': `₹${data?.total_cr?.toLocaleString('en-IN', { minimumFractionDigits: 2 })}`, color:'#7C3AED' },
-            { label:'Difference',         value: loading?'...': `₹${data?.diff?.toFixed(2)}`,                  color: data?.diff===0?'#059669':'#DC2626' },
+            { label:'Total Debit',        value: loading?'...': `₹${fmtINR(data?.total_dr)}`, color:'#2563EB' },
+            { label:'Total Credit',       value: loading?'...': `₹${fmtINR(data?.total_cr)}`, color:'#7C3AED' },
+            { label:'Difference',         value: loading?'...': `₹${data?.diff?.toFixed(2)}`,  color: data?.diff===0?'#059669':'#DC2626' },
             { label:'Vouchers Processed', value: loading?'...': data?.total_vouchers_processed?.toLocaleString('en-IN'), color:'#0891B2' },
           ].map(k => (
             <div key={k.label} style={{ background:'#fff', border:'1px solid #E5E7EB', borderRadius:10, padding:'14px 16px', borderTop:`3px solid ${k.color}` }}>
               <div style={{ fontSize:9, fontWeight:700, color:GREY, textTransform:'uppercase', letterSpacing:'.07em', marginBottom:6 }}>{k.label}</div>
-              <div style={{ fontSize:18, fontWeight:800, color:k.color }}>{k.value}</div>
+              <div style={{ fontSize:16, fontWeight:800, color:k.color }}>{k.value}</div>
             </div>
           ))}
         </div>
@@ -84,39 +88,39 @@ export default function TrialBalancePage() {
           <div style={{ background:'#fff', border:'1px solid #E5E7EB', borderRadius:12, overflow:'hidden' }}>
             <div style={{ background:'#1F3864', padding:'12px 20px', color:'#fff', fontWeight:700, fontSize:13, display:'flex', justifyContent:'space-between' }}>
               <span>Trial Balance — FY 2025-26 · {lines.length} ledgers</span>
-              <span style={{ fontSize:11, opacity:.7 }}>All amounts in full ₹</span>
+              <span style={{ fontSize:11, opacity:.7 }}>Full ₹ amounts · 30,490 vouchers</span>
             </div>
-            <table style={{ width:'100%', borderCollapse:'collapse', fontSize:13, tableLayout:'fixed' }}>
+            <table style={{ width:'100%', borderCollapse:'collapse', fontSize:12, tableLayout:'fixed' }}>
               <colgroup>
-                <col style={{ width:'44px' }} />
-                <col />
-                <col style={{ width:'120px' }} />
-                <col style={{ width:'120px' }} />
-                <col style={{ width:'140px' }} />
+                <col style={{ width:'40px' }} />
+                <col style={{ width:'30%' }} />
+                <col style={{ width:'23%' }} />
+                <col style={{ width:'23%' }} />
+                <col style={{ width:'24%' }} />
               </colgroup>
               <thead>
                 <tr style={{ background:'#F8FAFC' }}>
-                  {['#','Ledger Name','Debit (Cr)','Credit (Cr)','Net'].map(h => (
+                  {['#','Ledger Name','Total Debit (₹)','Total Credit (₹)','Net (₹)'].map(h => (
                     <th key={h} style={{ padding:'10px 12px', textAlign: h==='#'||h==='Ledger Name'?'left':'right', fontSize:10, fontWeight:700, color:GREY, textTransform:'uppercase', borderBottom:'1px solid #E5E7EB', background:'#F8FAFC' }}>{h}</th>
                   ))}
                 </tr>
               </thead>
               <tbody>
                 {lines.map((line: any, i: number) => {
-                  const n = netFmt(line.net)
+                  const n = fmtNet(line.net)
                   return (
                     <tr key={i} style={{ borderBottom:'1px solid #F3F4F6', background:'#fff' }}>
                       <td style={{ padding:'9px 12px', color:GREY, fontSize:11, background:'#fff' }}>{i+1}</td>
                       <td style={{ padding:'9px 12px', fontWeight:500, color:'#1F3864', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', background:'#fff' }} title={line.ledger_name}>
                         {line.ledger_name}
                       </td>
-                      <td style={{ padding:'9px 12px', textAlign:'right', fontFamily:'monospace', fontSize:12, color:DARK, background:'#fff' }}>
-                        {cr(line.total_debit)}
+                      <td style={{ padding:'9px 12px', textAlign:'right', fontFamily:'monospace', fontSize:11, color:DARK, background:'#fff' }}>
+                        {fmtINR(line.total_debit)}
                       </td>
-                      <td style={{ padding:'9px 12px', textAlign:'right', fontFamily:'monospace', fontSize:12, color:DARK, background:'#fff' }}>
-                        {cr(line.total_credit)}
+                      <td style={{ padding:'9px 12px', textAlign:'right', fontFamily:'monospace', fontSize:11, color:DARK, background:'#fff' }}>
+                        {fmtINR(line.total_credit)}
                       </td>
-                      <td style={{ padding:'9px 12px', textAlign:'right', fontFamily:'monospace', fontSize:12, fontWeight:600, color:n.color, background:'#fff' }}>
+                      <td style={{ padding:'9px 12px', textAlign:'right', fontFamily:'monospace', fontSize:11, fontWeight:600, color:n.color, background:'#fff' }}>
                         {n.text}
                       </td>
                     </tr>
@@ -124,16 +128,16 @@ export default function TrialBalancePage() {
                 })}
               </tbody>
               <tfoot>
-                <tr style={{ background:'#1F3864' }}>
+                <tr>
                   <td colSpan={2} style={{ padding:'10px 12px', color:'#fff', fontWeight:700, background:'#1F3864' }}>TOTAL — {data?.ledger_count} ledgers</td>
-                  <td style={{ padding:'10px 12px', textAlign:'right', fontFamily:'monospace', color:'#fff', fontWeight:700, background:'#1F3864' }}>
-                    {data?.total_dr?.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                  <td style={{ padding:'10px 12px', textAlign:'right', fontFamily:'monospace', color:'#fff', fontWeight:700, background:'#1F3864', fontSize:11 }}>
+                    {fmtINR(data?.total_dr)}
                   </td>
-                  <td style={{ padding:'10px 12px', textAlign:'right', fontFamily:'monospace', color:'#fff', fontWeight:700, background:'#1F3864' }}>
-                    {data?.total_cr?.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                  <td style={{ padding:'10px 12px', textAlign:'right', fontFamily:'monospace', color:'#fff', fontWeight:700, background:'#1F3864', fontSize:11 }}>
+                    {fmtINR(data?.total_cr)}
                   </td>
-                  <td style={{ padding:'10px 12px', textAlign:'right', fontFamily:'monospace', fontWeight:700, background:'#1F3864', color: data?.diff===0?'#A7F3D0':'#FCA5A5' }}>
-                    {data?.diff===0 ? '✓ 0.00' : `⚠ ${data?.diff}`}
+                  <td style={{ padding:'10px 12px', textAlign:'right', fontFamily:'monospace', fontWeight:700, background:'#1F3864', fontSize:11, color: data?.diff===0?'#A7F3D0':'#FCA5A5' }}>
+                    {data?.diff===0 ? '✓ ₹0.00' : `⚠ ₹${data?.diff}`}
                   </td>
                 </tr>
               </tfoot>
@@ -143,7 +147,7 @@ export default function TrialBalancePage() {
 
         {!loading && (
           <div style={{ marginTop:12, background:'#ECFDF5', border:'1px solid #A7F3D0', borderRadius:10, padding:'12px 16px', fontSize:11, color:'#059669' }}>
-            ✓ TB001 PASS — DR ₹{data?.total_dr?.toLocaleString('en-IN', { minimumFractionDigits: 2 })} = CR ₹{data?.total_cr?.toLocaleString('en-IN', { minimumFractionDigits: 2 })} — Diff ₹{data?.diff?.toFixed(2)}
+            ✓ TB001 PASS — Total DR ₹{fmtINR(data?.total_dr)} = Total CR ₹{fmtINR(data?.total_cr)} — Difference ₹{data?.diff?.toFixed(2)}
           </div>
         )}
       </div>
