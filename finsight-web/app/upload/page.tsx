@@ -2,7 +2,7 @@
 import { useState, useCallback } from 'react'
 import Layout from '../../components/Layout'
 
-type Step = 'idle' | 'uploading' | 'parsing' | 'done' | 'error'
+type Step = 'idle' | 'uploading' | 'done' | 'error'
 
 export default function UploadPage() {
   const [file, setFile] = useState<File | null>(null)
@@ -22,19 +22,17 @@ export default function UploadPage() {
     if (!file) return
     setStep('uploading')
     setError('')
+    setResult(null)
 
     try {
       const formData = new FormData()
       formData.append('file', file)
-
-      setStep('parsing')
       const API = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
       const res = await fetch(`${API}/api/upload`, {
         method: 'POST',
         body: formData,
       })
       const data = await res.json()
-
       if (data.error) {
         setError(data.error)
         setStep('error')
@@ -43,17 +41,10 @@ export default function UploadPage() {
         setStep('done')
       }
     } catch (err: any) {
-      setError(err.message)
+      setError(err.message || 'Upload failed')
       setStep('error')
     }
   }
-
-  const PIPELINE = [
-    { key: 'uploading', label: 'Upload' },
-    { key: 'parsing',   label: 'Parse Rows' },
-    { key: 'done',      label: 'Saved to DB' },
-  ]
-  const stepIdx = PIPELINE.findIndex(p => p.key === step)
 
   return (
     <Layout>
@@ -124,7 +115,7 @@ export default function UploadPage() {
               ].map(i => (
                 <div key={i.label}>
                   <div style={{ fontSize:9, fontWeight:700, color:'#6B7280', textTransform:'uppercase', letterSpacing:'.06em', marginBottom:3 }}>{i.label}</div>
-                  <div style={{ fontSize:13, fontWeight:600 }}>{i.value}</div>
+                  <div style={{ fontSize:13, fontWeight:600, color:'#111' }}>{i.value}</div>
                 </div>
               ))}
             </div>
@@ -142,36 +133,19 @@ export default function UploadPage() {
           </button>
         )}
 
-        {/* Pipeline status */}
-        {step !== 'idle' && step !== 'error' && (
-          <div style={{ background:'#fff', border:'1px solid #E5E7EB', borderRadius:12, padding:'20px 24px', marginBottom:20 }}>
-            <div style={{ fontWeight:700, color:'#1F3864', fontSize:13, marginBottom:20 }}>Pipeline Status</div>
-            <div style={{ display:'flex', alignItems:'center' }}>
-              {PIPELINE.map((p, i) => {
-                const done = step === 'done' || stepIdx > i
-                const active = PIPELINE[stepIdx]?.key === p.key
-                return (
-                  <div key={p.key} style={{ display:'flex', alignItems:'center', flex: i < 2 ? 1 : 0 }}>
-                    <div style={{ textAlign:'center' }}>
-                      <div style={{
-                        width:36, height:36, borderRadius:'50%', margin:'0 auto 6px',
-                        background: done ? '#059669' : active ? '#2563EB' : '#F3F4F6',
-                        display:'flex', alignItems:'center', justifyContent:'center',
-                        fontSize:13, fontWeight:700, color: done || active ? '#fff' : '#9CA3AF',
-                        transition:'all .3s'
-                      }}>
-                        {done ? '✓' : i + 1}
-                      </div>
-                      <div style={{ fontSize:10, fontWeight:600, color: done ? '#059669' : active ? '#2563EB' : '#9CA3AF' }}>
-                        {p.label}
-                      </div>
-                    </div>
-                    {i < 2 && (
-                      <div style={{ flex:1, height:2, background: done ? '#059669' : '#F3F4F6', margin:'0 8px', marginBottom:20, transition:'all .3s' }}/>
-                    )}
-                  </div>
-                )
-              })}
+        {/* Uploading state */}
+        {step === 'uploading' && (
+          <div style={{ background:'#EFF6FF', border:'1px solid #BFDBFE', borderRadius:12, padding:'24px', textAlign:'center', marginBottom:16 }}>
+            <div style={{ fontSize:32, marginBottom:12 }}>⏳</div>
+            <div style={{ fontSize:14, fontWeight:700, color:'#1D4ED8', marginBottom:8 }}>
+              Uploading and parsing {file?.name}...
+            </div>
+            <div style={{ fontSize:12, color:'#6B7280' }}>
+              This may take 30-60 seconds for large files (2-3 MB)<br/>
+              Parsing {file?.name} → extracting vouchers → saving to Supabase
+            </div>
+            <div style={{ marginTop:16, height:4, background:'#BFDBFE', borderRadius:2, overflow:'hidden' }}>
+              <div style={{ height:'100%', width:'60%', background:'#2563EB', borderRadius:2, animation:'none' }}/>
             </div>
           </div>
         )}
@@ -188,7 +162,7 @@ export default function UploadPage() {
           </div>
         )}
 
-        {/* Success result */}
+        {/* Success */}
         {step === 'done' && result && (
           <div style={{ background:'#ECFDF5', border:'1px solid #A7F3D0', borderRadius:12, padding:'20px 24px' }}>
             <div style={{ fontWeight:700, color:'#065F46', fontSize:15, marginBottom:12 }}>
@@ -196,26 +170,26 @@ export default function UploadPage() {
             </div>
             <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr 1fr 1fr', gap:12, marginBottom:16 }}>
               {[
-                { label:'Total Rows',         value: result.total_rows },
-                { label:'Vouchers Parsed',    value: result.voucher_count },
-                { label:'Ledgers Found',      value: result.ledger_count },
-                { label:'Saved to Supabase',  value: result.vouchers_inserted },
+                { label:'Total Rows',        value: result.total_rows?.toLocaleString('en-IN') },
+                { label:'Vouchers Parsed',   value: result.voucher_count?.toLocaleString('en-IN') },
+                { label:'Ledgers Found',     value: result.ledger_count?.toLocaleString('en-IN') },
+                { label:'Saved to Supabase', value: result.vouchers_inserted?.toLocaleString('en-IN') },
               ].map(k => (
                 <div key={k.label} style={{ background:'#fff', borderRadius:8, padding:'10px 12px', textAlign:'center' }}>
                   <div style={{ fontSize:9, fontWeight:700, color:'#6B7280', textTransform:'uppercase', letterSpacing:'.06em', marginBottom:4 }}>{k.label}</div>
-                  <div style={{ fontSize:22, fontWeight:800, color:'#059669' }}>{k.value}</div>
+                  <div style={{ fontSize:20, fontWeight:800, color:'#059669' }}>{k.value}</div>
                 </div>
               ))}
             </div>
             <div style={{ fontSize:11, color:'#059669', marginBottom:16 }}>
-              Upload ID: <code style={{ background:'#fff', padding:'1px 6px', borderRadius:4 }}>{result.upload_id}</code>
+              Upload ID: <code style={{ background:'#fff', padding:'1px 6px', borderRadius:4, color:'#111' }}>{result.upload_id}</code>
             </div>
             <div style={{ display:'flex', gap:10, flexWrap:'wrap' }}>
               <a href="/dashboard" style={{ background:'#1F3864', color:'#fff', padding:'10px 20px', borderRadius:8, textDecoration:'none', fontWeight:600, fontSize:13 }}>
                 Open CFO Dashboard →
               </a>
-              <a href="/mapping" style={{ background:'#fff', color:'#1F3864', padding:'10px 20px', borderRadius:8, textDecoration:'none', fontWeight:600, fontSize:13, border:'1px solid #1F3864' }}>
-                Review Ledger Mappings →
+              <a href="/reports/pl" style={{ background:'#fff', color:'#1F3864', padding:'10px 20px', borderRadius:8, textDecoration:'none', fontWeight:600, fontSize:13, border:'1px solid #1F3864' }}>
+                View P&L →
               </a>
               <button
                 onClick={() => { setFile(null); setStep('idle'); setResult(null) }}
