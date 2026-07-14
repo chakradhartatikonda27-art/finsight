@@ -834,3 +834,237 @@ async def get_real_pl_v2(upload_id: str):
             'pat':           fmt(pat),
         }
     }
+
+
+@app.get("/api/reports/real/bs/{upload_id}")
+async def get_real_bs(upload_id: str):
+    """Real Balance Sheet from Supabase vouchers."""
+    sb = get_sb()
+
+    BS_GROUPS = {
+        'Fixed Asset':              'Fixed Assets',
+        'Cash & Bank Balance':      'Cash & Bank',
+        'Balance With Banks':       'Cash & Bank',
+        'Sundry debtors':           'Trade Debtors',
+        'Short Term Loans & Advances': 'Other Current Assets',
+        'Other Current Assets':     'Other Current Assets',
+        'Financial Asset':          'Investments',
+        'Other Long Term Assets':   'Other Assets',
+        'Inventories':              'Inventory',
+        'Unbilled Revenue':         'Unbilled Revenue',
+        'Sundry creditors':         'Trade Creditors',
+        'Other Current Liabilities':'Other Current Liabilities',
+        'Short Term Provisions':    'Provisions',
+        'Short Term Borrowings':    'Short Term Borrowings',
+        'Long Term Borrowings':     'Long Term Borrowings',
+        'Share Capital':            'Share Capital',
+    }
+
+    ASSET_HEADS     = {'Fixed Assets','Cash & Bank','Trade Debtors','Other Current Assets','Investments','Other Assets','Inventory','Unbilled Revenue'}
+    LIABILITY_HEADS = {'Trade Creditors','Other Current Liabilities','Provisions','Short Term Borrowings','Long Term Borrowings'}
+    EQUITY_HEADS    = {'Share Capital'}
+
+    # Fetch all mappings
+    all_mappings = []
+    offset = 0
+    while True:
+        batch = sb.table('ledger_mappings').select('ledger_name,tally_group').eq('org_id','mudduluru-ka').range(offset,offset+999).execute().data
+        if not batch: break
+        all_mappings.extend(batch)
+        if len(batch) < 1000: break
+        offset += 1000
+
+    ledger_to_group = {m['ledger_name']: m['tally_group'] or 'Unknown' for m in all_mappings}
+
+    # Fetch all vouchers
+    all_vouchers = []
+    offset = 0
+    while True:
+        batch = sb.table('vouchers').select('ledger_name,debit,credit').eq('upload_id', upload_id).range(offset,offset+999).execute().data
+        if not batch: break
+        all_vouchers.extend(batch)
+        if len(batch) < 1000: break
+        offset += 1000
+
+    # Aggregate
+    totals = {}
+    for v in all_vouchers:
+        g = ledger_to_group.get(v['ledger_name'], 'Unknown')
+        bs_head = BS_GROUPS.get(g)
+        if not bs_head:
+            continue
+        if bs_head not in totals:
+            totals[bs_head] = {'debit': 0.0, 'credit': 0.0}
+        totals[bs_head]['debit']  += float(v['debit']  or 0)
+        totals[bs_head]['credit'] += float(v['credit'] or 0)
+
+    def net(head):
+        t = totals.get(head, {})
+        return round(t.get('debit', 0) - t.get('credit', 0), 2)
+
+    # Assets (net debit = asset)
+    fixed_assets   = net('Fixed Assets')
+    cash_bank      = net('Cash & Bank')
+    trade_debtors  = net('Trade Debtors')
+    other_ca       = net('Other Current Assets')
+    investments    = net('Investments')
+    other_assets   = net('Other Assets')
+    inventory      = -net('Inventory')  # credit balance = inventory
+    unbilled       = -net('Unbilled Revenue')
+
+    total_assets   = round(fixed_assets + cash_bank + trade_debtors + other_ca +
+                          investments + other_assets + inventory + unbilled, 2)
+
+    # Liabilities (net credit = liability)
+    trade_cred     = -net('Trade Creditors')
+    other_cl       = -net('Other Current Liabilities')
+    provisions     = -net('Provisions')
+    st_borrowings  = -net('Short Term Borrowings')
+    lt_borrowings  = -net('Long Term Borrowings')
+
+    total_liab     = round(trade_cred + other_cl + provisions + st_borrowings + lt_borrowings, 2)
+
+    # Equity
+    share_capital  = -net('Share Capital')
+    retained       = round(total_assets - total_liab - share_capital, 2)
+    total_equity   = round(share_capital + retained, 2)
+
+    total_le       = round(total_liab + total_equity, 2)
+    diff           = round(abs(total_assets - total_le), 2)
+
+    return {
+        'upload_id':      upload_id,
+        'total_vouchers': len(all_vouchers),
+        'as_at_date':     '31 March 2026',
+        'assets': {
+            'fixed_assets':        round(fixed_assets, 2),
+            'inventory':           round(inventory, 2),
+            'unbilled_revenue':    round(unbilled, 2),
+            'trade_debtors':       round(trade_debtors, 2),
+            'other_current_assets':round(other_ca, 2),
+            'cash_and_bank':       round(cash_bank, 2),
+            'investments':         round(investments, 2),
+            'other_assets':        round(other_assets, 2),
+            'total':               round(total_assets, 2),
+        },
+        'liabilities': {
+            'trade_creditors':     round(trade_cred, 2),
+            'short_term_borrowings':round(st_borrowings, 2),
+            'other_current_liab':  round(other_cl, 2),
+            'provisions':          round(provisions, 2),
+            'long_term_borrowings':round(lt_borrowings, 2),
+            'total':               round(total_liab, 2),
+        },
+        'equity': {
+            'share_capital':       round(share_capital, 2),
+            'retained_earnings':   round(retained, 2),
+            'total':               round(total_equity, 2),
+        },
+        'total_assets':            round(total_assets, 2),
+        'total_liabilities_equity':round(total_le, 2),
+        'difference':              diff,
+        'bs001_status':            'PASS' if diff < 100000 else 'REVIEW',
+    }
+
+
+@app.get("/api/reports/real/kpis/{upload_id}")
+async def get_real_kpis(upload_id: str):
+    """Real KPIs for CFO Dashboard."""
+    sb = get_sb()
+
+    MUDDULURU_MIS = {
+        'Sale of Service':                  'Revenue',
+        'Unbilled Revenue':                 'Revenue',
+        'Cost of material Consumed':        'Material Cost',
+        'Cost of Fuel Consumed':            'Material Cost',
+        'Direct Project Cost':              'Direct Cost',
+        'Direct Labour Cost':               'Direct Labour',
+        'Employee Benefit Expenses':        'Employee Cost',
+        'Rent, rates & taxes':              'Administrative Cost',
+        'Other administration expenses':    'Administrative Cost',
+        'Legal and Professional Expenses':  'Administrative Cost',
+        'Travel and Accomodation':          'Administrative Cost',
+        'Repairs and Maintenance':          'Administrative Cost',
+        'Interest on cash credit & overdraft': 'Finance Cost',
+        'Interest on term loans':           'Finance Cost',
+        'INTEREST ON UNSECURED LOAN':       'Finance Cost',
+        'Bank Charges':                     'Finance Cost',
+        'Cash & Bank Balance':              'Cash',
+        'Balance With Banks':               'Cash',
+        'Sundry debtors':                   'Debtors',
+        'Sundry creditors':                 'Creditors',
+        'Short Term Borrowings':            'OD',
+        'Long Term Borrowings':             'Term Loans',
+    }
+
+    all_mappings = []
+    offset = 0
+    while True:
+        batch = sb.table('ledger_mappings').select('ledger_name,tally_group').eq('org_id','mudduluru-ka').range(offset,offset+999).execute().data
+        if not batch: break
+        all_mappings.extend(batch)
+        if len(batch) < 1000: break
+        offset += 1000
+
+    ledger_to_group = {m['ledger_name']: m['tally_group'] or 'Unknown' for m in all_mappings}
+
+    all_vouchers = []
+    offset = 0
+    while True:
+        batch = sb.table('vouchers').select('ledger_name,debit,credit').eq('upload_id', upload_id).range(offset,offset+999).execute().data
+        if not batch: break
+        all_vouchers.extend(batch)
+        if len(batch) < 1000: break
+        offset += 1000
+
+    totals = {}
+    for v in all_vouchers:
+        g = ledger_to_group.get(v['ledger_name'], 'Unknown')
+        head = MUDDULURU_MIS.get(g)
+        if not head: continue
+        if head not in totals:
+            totals[head] = {'debit': 0.0, 'credit': 0.0}
+        totals[head]['debit']  += float(v['debit']  or 0)
+        totals[head]['credit'] += float(v['credit'] or 0)
+
+    def cr(h): return round(totals.get(h, {}).get('credit', 0), 2)
+    def dr(h): return round(totals.get(h, {}).get('debit', 0), 2)
+
+    revenue      = round(cr('Revenue') - dr('Revenue'), 2)
+    material     = round(dr('Material Cost') - cr('Material Cost'), 2)
+    direct       = round(dr('Direct Cost')   - cr('Direct Cost'), 2)
+    direct_lab   = round(dr('Direct Labour') - cr('Direct Labour'), 2)
+    gross_profit = round(revenue - material - direct - direct_lab, 2)
+    emp_cost     = round(dr('Employee Cost') - cr('Employee Cost'), 2)
+    admin_cost   = round(dr('Administrative Cost') - cr('Administrative Cost'), 2)
+    ebitda       = round(gross_profit - emp_cost - admin_cost, 2)
+    finance_cost = round(dr('Finance Cost') - cr('Finance Cost'), 2)
+    pat          = round(ebitda - finance_cost, 2)
+
+    cash         = round(dr('Cash') - cr('Cash'), 2)
+    debtors      = round(dr('Debtors') - cr('Debtors'), 2)
+    creditors    = round(cr('Creditors') - dr('Creditors'), 2)
+    od           = round(cr('OD') - dr('OD'), 2)
+    term_loans   = round(cr('Term Loans') - dr('Term Loans'), 2)
+
+    gp_pct    = round(gross_profit / revenue * 100, 1) if revenue else 0
+    ebitda_pct = round(ebitda / revenue * 100, 1) if revenue else 0
+    pat_pct   = round(pat / revenue * 100, 1) if revenue else 0
+
+    return {
+        'upload_id':        upload_id,
+        'total_vouchers':   len(all_vouchers),
+        'period':           'FY 2025-26',
+        'revenue':          revenue,
+        'gross_profit':     gross_profit,
+        'gp_margin_pct':    gp_pct,
+        'ebitda':           ebitda,
+        'ebitda_margin_pct':ebitda_pct,
+        'pat':              pat,
+        'pat_margin_pct':   pat_pct,
+        'cash':             cash,
+        'debtors':          debtors,
+        'creditors':        creditors,
+        'od':               od,
+        'term_loans':       term_loans,
+    }
