@@ -517,3 +517,320 @@ async def get_real_trial_balance_full(upload_id: str):
         'total_vouchers_processed': len(all_vouchers),
         'lines':        lines,
     }
+
+
+# ── Real P&L from Supabase ────────────────────────────────────────
+
+# Tally group → MIS head mapping
+TALLY_TO_MIS = {
+    # Revenue
+    'Construction of Road Work':           'Revenue',
+    'Revenue from Operations':             'Revenue',
+    'Sales Accounts':                      'Revenue',
+    'Direct Income':                       'Revenue',
+
+    # Direct Costs
+    'Cost of material Consumed':           'Material Cost',
+    'Direct Project Cost':                 'Direct Cost',
+    'Direct Labour Cost':                  'Direct Labour',
+    'Royalty Expense':                     'Direct Cost',
+
+    # Employee Cost
+    'Employee Benefit Expenses':           'Employee Cost',
+
+    # Admin / OpEx
+    'Rent, rates & taxes':                 'Administrative Cost',
+    'Other administration expenses':       'Administrative Cost',
+    'Repairs and Maintenance':             'Administrative Cost',
+    'Bank Charges':                        'Finance Cost',
+
+    # Finance Cost
+    'Interest on term loans':              'Finance Cost',
+    'Long Term Borrowings':                'Finance Cost',
+
+    # Balance Sheet — Assets
+    'Fixed Asset':                         'Fixed Assets',
+    'Cash & Bank Balance':                 'Cash & Bank',
+    'Sundry debtors':                      'Trade Debtors',
+    'Short Term Loans & Advances':         'Other Current Assets',
+    'Financial Asset':                     'Financial Assets',
+    'Other Long Term Assets':              'Other Assets',
+
+    # Balance Sheet — Liabilities
+    'Sundry creditors':                    'Trade Creditors',
+    'Other Current Liabilities':           'Other Current Liabilities',
+    'Share Capital':                       'Share Capital',
+    'Branch/ Division Account':            'Intercompany',
+}
+
+PL_MIS_HEADS = {
+    'Revenue', 'Material Cost', 'Direct Cost', 'Direct Labour',
+    'Employee Cost', 'Administrative Cost', 'Finance Cost',
+}
+
+@app.get("/api/reports/real/pl-from-vouchers/{upload_id}")
+async def get_real_pl_from_vouchers(upload_id: str):
+    """
+    Build real P&L by:
+    1. Fetching all vouchers from Supabase in batches
+    2. Joining with ledger_mappings to get tally_group
+    3. Mapping tally_group → MIS head
+    4. Aggregating debit/credit by MIS head
+    """
+    sb = get_sb()
+
+    # Fetch all ledger mappings for org
+    mapping_result = sb.table('ledger_mappings').select(
+        'ledger_name,tally_group'
+    ).eq('org_id', 'mudduluru-ka').execute()
+
+    ledger_to_group = {
+        m['ledger_name']: m['tally_group'] or 'Unknown'
+        for m in mapping_result.data
+    }
+
+    # Fetch all vouchers in batches
+    all_vouchers = []
+    offset = 0
+    while True:
+        batch = sb.table('vouchers').select(
+            'ledger_name,debit,credit,voucher_type'
+        ).eq('upload_id', upload_id).range(offset, offset + 999).execute().data
+        if not batch:
+            break
+        all_vouchers.extend(batch)
+        if len(batch) < 1000:
+            break
+        offset += 1000
+
+    # Aggregate by MIS head
+    mis_totals = {}
+    unclassified = {}
+
+    for v in all_vouchers:
+        ledger = v['ledger_name']
+        tally_group = ledger_to_group.get(ledger, 'Unknown')
+        mis_head = TALLY_TO_MIS.get(tally_group, None)
+
+        debit  = float(v['debit']  or 0)
+        credit = float(v['credit'] or 0)
+
+        if mis_head and mis_head in PL_MIS_HEADS:
+            if mis_head not in mis_totals:
+                mis_totals[mis_head] = {'debit': 0.0, 'credit': 0.0}
+            mis_totals[mis_head]['debit']  += debit
+            mis_totals[mis_head]['credit'] += credit
+        else:
+            key = f"{tally_group} → {mis_head or 'UNCLASSIFIED'}"
+            if key not in unclassified:
+                unclassified[key] = {'debit': 0.0, 'credit': 0.0, 'count': 0}
+            unclassified[key]['debit']  += debit
+            unclassified[key]['credit'] += credit
+            unclassified[key]['count']  += 1
+
+    # Build P&L
+    def net(mis_head):
+        t = mis_totals.get(mis_head, {})
+        return round(t.get('credit', 0) - t.get('debit', 0), 2)
+
+    revenue       = net('Revenue')
+    material_cost = round(mis_totals.get('Material Cost', {}).get('debit', 0) +
+                         mis_totals.get('Direct Cost', {}).get('debit', 0) +
+                         mis_totals.get('Direct Labour', {}).get('debit', 0), 2)
+    gross_profit  = round(revenue - material_cost, 2)
+    employee_cost = round(mis_totals.get('Employee Cost', {}).get('debit', 0), 2)
+    admin_cost    = round(mis_totals.get('Administrative Cost', {}).get('debit', 0), 2)
+    opex          = round(employee_cost + admin_cost, 2)
+    ebitda        = round(gross_profit - opex, 2)
+    finance_cost  = round(mis_totals.get('Finance Cost', {}).get('debit', 0), 2)
+    pat           = round(ebitda - finance_cost, 2)
+
+    gp_margin     = round(gross_profit / revenue * 100, 1) if revenue else 0
+    ebitda_margin = round(ebitda / revenue * 100, 1) if revenue else 0
+    pat_margin    = round(pat / revenue * 100, 1) if revenue else 0
+
+    return {
+        'upload_id':      upload_id,
+        'total_vouchers': len(all_vouchers),
+        'period':         'FY 2025-26',
+        'company':        'Mudduluru Infratech Pvt. Ltd. (KA)',
+        'revenue':        revenue,
+        'material_cost':  material_cost,
+        'gross_profit':   gross_profit,
+        'gp_margin_pct':  gp_margin,
+        'employee_cost':  employee_cost,
+        'admin_cost':     admin_cost,
+        'opex':           opex,
+        'ebitda':         ebitda,
+        'ebitda_margin_pct': ebitda_margin,
+        'finance_cost':   finance_cost,
+        'pat':            pat,
+        'pat_margin_pct': pat_margin,
+        'mis_totals':     {k: {
+            'debit':  round(v['debit'], 2),
+            'credit': round(v['credit'], 2),
+            'net':    round(v['credit'] - v['debit'], 2)
+        } for k, v in mis_totals.items()},
+        'unclassified_top10': sorted(
+            [{'group': k, **v} for k, v in unclassified.items()],
+            key=lambda x: x['debit'], reverse=True
+        )[:10],
+    }
+
+
+@app.get("/api/reports/real/pl-v2/{upload_id}")
+async def get_real_pl_v2(upload_id: str):
+    """
+    Real P&L with correct Mudduluru tally group mapping.
+    Revenue = Sale of Service + Unbilled Revenue
+    """
+    sb = get_sb()
+
+    # Correct mapping based on actual Mudduluru tally groups
+    MUDDULURU_MIS = {
+        # Revenue
+        'Sale of Service':                  'Revenue',
+        'Unbilled Revenue':                 'Revenue',
+        'Interest Income':                  'Other Income',
+
+        # Direct Costs
+        'Cost of material Consumed':        'Material Cost',
+        'Cost of Fuel Consumed':            'Material Cost',
+        'Direct Project Cost':              'Direct Cost',
+        'Direct Labour Cost':               'Direct Labour',
+
+        # Employee
+        'Employee Benefit Expenses':        'Employee Cost',
+
+        # Admin / OpEx
+        'Rent, rates & taxes':              'Administrative Cost',
+        'Other administration expenses':    'Administrative Cost',
+        'Legal and Professional Expenses':  'Administrative Cost',
+        'Travel and Accomodation':          'Administrative Cost',
+        'Repairs and Maintenance':          'Administrative Cost',
+
+        # Finance
+        'Interest on cash credit & overdraft': 'Finance Cost',
+        'Interest on term loans':           'Finance Cost',
+        'INTEREST ON UNSECURED LOAN':       'Finance Cost',
+        'Bank Charges':                     'Finance Cost',
+
+        # BS — Assets
+        'Fixed Asset':                      'Fixed Assets',
+        'Cash & Bank Balance':              'Cash & Bank',
+        'Sundry debtors':                   'Trade Debtors',
+        'Short Term Loans & Advances':      'Other Current Assets',
+        'Other Current Assets':             'Other Current Assets',
+        'Financial Asset':                  'Financial Assets',
+        'Other Long Term Assets':           'Other Assets',
+        'Unbilled Revenue':                 'Other Current Assets',
+
+        # BS — Liabilities
+        'Sundry creditors':                 'Trade Creditors',
+        'Other Current Liabilities':        'Other Current Liabilities',
+        'Short Term Provisions':            'Other Current Liabilities',
+        'Long Term Borrowings':             'Term Loans',
+        'Share Capital':                    'Share Capital',
+    }
+
+    PL_HEADS = {
+        'Revenue', 'Other Income', 'Material Cost', 'Direct Cost',
+        'Direct Labour', 'Employee Cost', 'Administrative Cost', 'Finance Cost',
+    }
+
+    # Fetch ledger mappings
+    mapping_result = sb.table('ledger_mappings').select(
+        'ledger_name,tally_group'
+    ).eq('org_id', 'mudduluru-ka').execute()
+
+    ledger_to_group = {
+        m['ledger_name']: m['tally_group'] or 'Unknown'
+        for m in mapping_result.data
+    }
+
+    # Fetch all vouchers in batches
+    all_vouchers = []
+    offset = 0
+    while True:
+        batch = sb.table('vouchers').select(
+            'ledger_name,debit,credit'
+        ).eq('upload_id', upload_id).range(offset, offset + 999).execute().data
+        if not batch:
+            break
+        all_vouchers.extend(batch)
+        if len(batch) < 1000:
+            break
+        offset += 1000
+
+    # Aggregate
+    mis_totals = {}
+    for v in all_vouchers:
+        tally_group = ledger_to_group.get(v['ledger_name'], 'Unknown')
+        mis_head = MUDDULURU_MIS.get(tally_group)
+        if not mis_head or mis_head not in PL_HEADS:
+            continue
+        if mis_head not in mis_totals:
+            mis_totals[mis_head] = {'debit': 0.0, 'credit': 0.0}
+        mis_totals[mis_head]['debit']  += float(v['debit']  or 0)
+        mis_totals[mis_head]['credit'] += float(v['credit'] or 0)
+
+    def dr(h): return round(mis_totals.get(h, {}).get('debit', 0), 2)
+    def cr(h): return round(mis_totals.get(h, {}).get('credit', 0), 2)
+    def net(h): return round(cr(h) - dr(h), 2)
+
+    revenue      = round(cr('Revenue') - dr('Revenue'), 2)
+    other_income = round(cr('Other Income') - dr('Other Income'), 2)
+    total_income = round(revenue + other_income, 2)
+
+    material     = round(dr('Material Cost') - cr('Material Cost'), 2)
+    direct_cost  = round(dr('Direct Cost')   - cr('Direct Cost'), 2)
+    direct_lab   = round(dr('Direct Labour') - cr('Direct Labour'), 2)
+    total_cogs   = round(material + direct_cost + direct_lab, 2)
+
+    gross_profit = round(total_income - total_cogs, 2)
+    gp_pct       = round(gross_profit / total_income * 100, 1) if total_income else 0
+
+    emp_cost     = round(dr('Employee Cost')       - cr('Employee Cost'), 2)
+    admin_cost   = round(dr('Administrative Cost') - cr('Administrative Cost'), 2)
+    opex         = round(emp_cost + admin_cost, 2)
+
+    ebitda       = round(gross_profit - opex, 2)
+    ebitda_pct   = round(ebitda / total_income * 100, 1) if total_income else 0
+
+    finance_cost = round(dr('Finance Cost') - cr('Finance Cost'), 2)
+    pat          = round(ebitda - finance_cost, 2)
+    pat_pct      = round(pat / total_income * 100, 1) if total_income else 0
+
+    def fmt(n):
+        return f"₹{abs(n)/10000000:.2f} Cr {'(Loss)' if n < 0 else ''}"
+
+    return {
+        'upload_id':        upload_id,
+        'total_vouchers':   len(all_vouchers),
+        'period':           'FY 2025-26',
+        'company':          'Mudduluru Infratech Pvt. Ltd. (KA)',
+        'revenue':          revenue,
+        'other_income':     other_income,
+        'total_income':     total_income,
+        'material_cost':    material,
+        'direct_cost':      direct_cost,
+        'direct_labour':    direct_lab,
+        'total_cogs':       total_cogs,
+        'gross_profit':     gross_profit,
+        'gp_margin_pct':    gp_pct,
+        'employee_cost':    emp_cost,
+        'admin_cost':       admin_cost,
+        'opex':             opex,
+        'ebitda':           ebitda,
+        'ebitda_margin_pct':ebitda_pct,
+        'finance_cost':     finance_cost,
+        'pat':              pat,
+        'pat_margin_pct':   pat_pct,
+        'formatted': {
+            'revenue':       fmt(revenue),
+            'gross_profit':  fmt(gross_profit),
+            'ebitda':        fmt(ebitda),
+            'finance_cost':  fmt(finance_cost),
+            'pat':           fmt(pat),
+        }
+    }
