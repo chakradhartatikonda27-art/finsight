@@ -281,3 +281,239 @@ async def get_vouchers(upload_id: str, limit: int = 100):
         "count": len(result.data),
         "vouchers": result.data
     }
+
+
+# ── Real data aggregation endpoints ───────────────────────────────
+
+@app.get("/api/reports/real/pl/{upload_id}")
+async def get_real_pl(upload_id: str):
+    """Aggregate real P&L from Supabase vouchers."""
+    sb = get_sb()
+
+    # Get all vouchers for this upload
+    result = sb.table('vouchers').select('*').eq('upload_id', upload_id).execute()
+    vouchers = result.data
+
+    if not vouchers:
+        return {"error": "No vouchers found for this upload_id"}
+
+    # Get ledger mappings for tally_group classification
+    mappings = sb.table('ledger_mappings').select('ledger_name,tally_group').eq('org_id', 'mudduluru-ka').execute()
+    tally_groups = {m['ledger_name']: m['tally_group'] for m in mappings.data}
+
+    # Aggregate by tally_group
+    totals = {}
+    for v in vouchers:
+        group = tally_groups.get(v['ledger_name'], 'Unknown')
+        if group not in totals:
+            totals[group] = {'debit': 0.0, 'credit': 0.0, 'count': 0}
+        totals[group]['debit']  += v['debit']  or 0
+        totals[group]['credit'] += v['credit'] or 0
+        totals[group]['count']  += 1
+
+    # Sort by count descending
+    sorted_totals = sorted(totals.items(), key=lambda x: x[1]['count'], reverse=True)
+
+    return {
+        'upload_id':      upload_id,
+        'total_vouchers': len(vouchers),
+        'total_ledgers':  len(tally_groups),
+        'aggregations':   [
+            {
+                'tally_group': group,
+                'total_debit':  round(data['debit'], 2),
+                'total_credit': round(data['credit'], 2),
+                'net':          round(data['credit'] - data['debit'], 2),
+                'voucher_count': data['count'],
+            }
+            for group, data in sorted_totals[:20]
+        ]
+    }
+
+
+@app.get("/api/reports/real/trial-balance/{upload_id}")
+async def get_real_trial_balance(upload_id: str):
+    """Generate Trial Balance from real vouchers."""
+    sb = get_sb()
+
+    result = sb.table('vouchers').select('ledger_name,debit,credit').eq('upload_id', upload_id).execute()
+    vouchers = result.data
+
+    if not vouchers:
+        return {"error": "No vouchers found"}
+
+    # Aggregate by ledger
+    ledger_totals = {}
+    for v in vouchers:
+        name = v['ledger_name']
+        if name not in ledger_totals:
+            ledger_totals[name] = {'debit': 0.0, 'credit': 0.0}
+        ledger_totals[name]['debit']  += v['debit']  or 0
+        ledger_totals[name]['credit'] += v['credit'] or 0
+
+    total_dr = sum(v['debit']  for v in ledger_totals.values())
+    total_cr = sum(v['credit'] for v in ledger_totals.values())
+    diff     = round(abs(total_dr - total_cr), 2)
+
+    # Sort by debit descending
+    lines = sorted([
+        {
+            'ledger_name':   name,
+            'total_debit':   round(v['debit'], 2),
+            'total_credit':  round(v['credit'], 2),
+            'net':           round(v['debit'] - v['credit'], 2),
+        }
+        for name, v in ledger_totals.items()
+        if v['debit'] > 0 or v['credit'] > 0
+    ], key=lambda x: x['total_debit'], reverse=True)
+
+    return {
+        'upload_id':   upload_id,
+        'total_dr':    round(total_dr, 2),
+        'total_cr':    round(total_cr, 2),
+        'diff':        diff,
+        'tb001_status':'PASS' if diff < 0.50 else 'FAIL',
+        'ledger_count': len(lines),
+        'lines':        lines[:100],  # top 100 ledgers
+    }
+
+
+@app.get("/api/reports/real/daybook/{upload_id}")
+async def get_real_daybook(
+    upload_id: str,
+    page: int = 1,
+    limit: int = 50,
+    search: str = "",
+    vch_type: str = "",
+):
+    """Paginated Day Book from real vouchers."""
+    sb = get_sb()
+
+    query = sb.table('vouchers').select('*').eq('upload_id', upload_id)
+
+    if search:
+        query = query.ilike('ledger_name', f'%{search}%')
+    if vch_type:
+        query = query.eq('voucher_type', vch_type)
+
+    # Get total count
+    count_result = sb.table('vouchers').select('id', count='exact').eq('upload_id', upload_id).execute()
+    total = count_result.count or 0
+
+    # Paginate
+    offset = (page - 1) * limit
+    result = query.order('txn_date').range(offset, offset + limit - 1).execute()
+
+    return {
+        'upload_id':   upload_id,
+        'total':       total,
+        'page':        page,
+        'limit':       limit,
+        'pages':       (total + limit - 1) // limit,
+        'vouchers':    result.data,
+    }
+
+
+@app.get("/api/reports/real/summary/{upload_id}")
+async def get_real_summary(upload_id: str):
+    """High-level summary of real uploaded data."""
+    sb = get_sb()
+
+    vouchers = sb.table('vouchers').select('voucher_type,debit,credit').eq('upload_id', upload_id).execute()
+
+    if not vouchers.data:
+        return {"error": "No data found"}
+
+    total_debit  = sum(v['debit']  or 0 for v in vouchers.data)
+    total_credit = sum(v['credit'] or 0 for v in vouchers.data)
+
+    # Voucher type breakdown
+    vch_types = {}
+    for v in vouchers.data:
+        t = v['voucher_type'] or 'Unknown'
+        if t not in vch_types:
+            vch_types[t] = {'count': 0, 'debit': 0.0, 'credit': 0.0}
+        vch_types[t]['count']  += 1
+        vch_types[t]['debit']  += v['debit']  or 0
+        vch_types[t]['credit'] += v['credit'] or 0
+
+    return {
+        'upload_id':      upload_id,
+        'total_vouchers': len(vouchers.data),
+        'total_debit':    round(total_debit, 2),
+        'total_credit':   round(total_credit, 2),
+        'diff':           round(abs(total_debit - total_credit), 2),
+        'voucher_types':  [
+            {
+                'type':   t,
+                'count':  d['count'],
+                'debit':  round(d['debit'], 2),
+                'credit': round(d['credit'], 2),
+            }
+            for t, d in sorted(vch_types.items(), key=lambda x: x[1]['count'], reverse=True)
+        ]
+    }
+
+
+@app.get("/api/reports/real/trial-balance-full/{upload_id}")
+async def get_real_trial_balance_full(upload_id: str):
+    """Full Trial Balance — fetches all vouchers in batches to bypass 1000 row limit."""
+    sb = get_sb()
+
+    all_vouchers = []
+    limit = 1000
+    offset = 0
+
+    while True:
+        result = (
+            sb.table('vouchers')
+            .select('ledger_name,debit,credit')
+            .eq('upload_id', upload_id)
+            .range(offset, offset + limit - 1)
+            .execute()
+        )
+        batch = result.data
+        if not batch:
+            break
+        all_vouchers.extend(batch)
+        if len(batch) < limit:
+            break
+        offset += limit
+
+    if not all_vouchers:
+        return {"error": "No vouchers found"}
+
+    # Aggregate by ledger
+    ledger_totals = {}
+    for v in all_vouchers:
+        name = v['ledger_name']
+        if name not in ledger_totals:
+            ledger_totals[name] = {'debit': 0.0, 'credit': 0.0}
+        ledger_totals[name]['debit']  += v['debit']  or 0
+        ledger_totals[name]['credit'] += v['credit'] or 0
+
+    total_dr = sum(v['debit']  for v in ledger_totals.values())
+    total_cr = sum(v['credit'] for v in ledger_totals.values())
+    diff     = round(abs(total_dr - total_cr), 2)
+
+    lines = sorted([
+        {
+            'ledger_name':  name,
+            'total_debit':  round(v['debit'], 2),
+            'total_credit': round(v['credit'], 2),
+            'net':          round(v['debit'] - v['credit'], 2),
+        }
+        for name, v in ledger_totals.items()
+        if v['debit'] > 0 or v['credit'] > 0
+    ], key=lambda x: x['total_debit'], reverse=True)
+
+    return {
+        'upload_id':    upload_id,
+        'total_dr':     round(total_dr, 2),
+        'total_cr':     round(total_cr, 2),
+        'diff':         diff,
+        'tb001_status': 'PASS' if diff < 0.50 else 'FAIL',
+        'ledger_count': len(lines),
+        'total_vouchers_processed': len(all_vouchers),
+        'lines':        lines,
+    }
