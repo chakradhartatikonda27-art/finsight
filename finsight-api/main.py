@@ -1257,3 +1257,92 @@ async def get_fast_trial_balance_v2(upload_id: str):
         'total_vouchers_processed': len(all_vouchers),
         'lines':                    lines,
     }
+
+
+import threading
+
+def _background_parse(upload_id: str, file_content: bytes, filename: str):
+    """Parse file in background thread after upload."""
+    import tempfile, os
+    ext = os.path.splitext(filename)[1].lower()
+    tmp_path = f"/tmp/{upload_id}{ext}"
+    try:
+        with open(tmp_path, 'wb') as f:
+            f.write(file_content)
+        import parser as tally_parser
+        parsed = tally_parser.parse_xls(tmp_path)
+        os.unlink(tmp_path)
+        sb = get_sb()
+        if parsed['voucher_count'] > 0:
+            tally_parser.save_to_supabase(parsed, 'mudduluru-ka', upload_id, sb)
+        sb.table('uploads').update({
+            'status': 'parsed',
+            'row_count': parsed['total_rows'],
+            'voucher_count': parsed['voucher_count'],
+            'ledger_count': parsed['ledger_count'],
+        }).eq('id', upload_id).execute()
+    except Exception as e:
+        try:
+            get_sb().table('uploads').update({
+                'status': 'error',
+                'error_message': str(e)[:300]
+            }).eq('id', upload_id).execute()
+        except:
+            pass
+
+
+@app.post("/api/upload-async")
+async def upload_file_async(file: UploadFile = File(...)):
+    """
+    Upload file — returns immediately with upload_id.
+    Parsing runs in background. Poll GET /api/upload-status/{upload_id}
+    """
+    import uuid, os
+    from datetime import datetime, timezone
+
+    ext = os.path.splitext(file.filename or '')[1].lower()
+    if ext not in ('.xls', '.xlsx', '.csv'):
+        return {"error": f"File type {ext} not supported"}
+
+    content = await file.read()
+    upload_id = str(uuid.uuid4())
+
+    # Save upload record immediately
+    try:
+        get_sb().table('uploads').insert({
+            'id': upload_id,
+            'org_id': 'mudduluru-ka',
+            'filename': file.filename,
+            'status': 'parsing',
+            'file_size_bytes': len(content),
+            'created_at': datetime.now(timezone.utc).isoformat(),
+        }).execute()
+    except Exception as e:
+        return {"error": str(e)}
+
+    # Start background parse
+    thread = threading.Thread(
+        target=_background_parse,
+        args=(upload_id, content, file.filename),
+        daemon=True
+    )
+    thread.start()
+
+    return {
+        "upload_id": upload_id,
+        "filename": file.filename,
+        "status": "parsing",
+        "message": "File received. Parsing in background. Poll /api/upload-status/{upload_id} for progress.",
+    }
+
+
+@app.get("/api/upload-status/{upload_id}")
+async def get_upload_status(upload_id: str):
+    """Poll this endpoint to check parsing progress."""
+    try:
+        result = get_sb().table('uploads').select(
+            'id, filename, status, row_count, voucher_count, ledger_count, error_message'
+        ).eq('id', upload_id).single().execute()
+        return result.data
+    except Exception as e:
+        return {"error": str(e)}
