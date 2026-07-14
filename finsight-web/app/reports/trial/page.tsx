@@ -103,19 +103,19 @@ export default function TrialBalancePage() {
               </thead>
               <tbody>
                 {lines.map((line: any, i: number) => (
-                  <tr key={i} style={{ borderBottom:'0.5px solid #F3F4F6', background: i%2===0?'#fff':'#FAFAFA' }}>
+                  <tr key={i} style={{ borderBottom:'0.5px solid #F3F4F6', background: i%2===0?'#fff':'#FAFAFA', color:'#111' }}>
                     <td style={{ padding:'8px 12px', color:'#9CA3AF', fontSize:11 }}>{i+1}</td>
                     <td style={{ padding:'8px 12px', fontWeight:500, color:'#1F3864', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }} title={line.ledger_name}>
                       {line.ledger_name}
                     </td>
-                    <td style={{ padding:'8px 12px', textAlign:'right', fontFamily:'monospace', fontSize:12 }}>
+                    <td style={{ padding:'8px 12px', textAlign:'right', fontFamily:'monospace', fontSize:12, color:'#111' }}>
                       {cr(line.total_debit)}
                     </td>
-                    <td style={{ padding:'8px 12px', textAlign:'right', fontFamily:'monospace', fontSize:12 }}>
+                    <td style={{ padding:'8px 12px', textAlign:'right', fontFamily:'monospace', fontSize:12, color:'#111' }}>
                       {cr(line.total_credit)}
                     </td>
                     <td style={{ padding:'8px 12px', textAlign:'right', fontFamily:'monospace', fontSize:12, fontWeight:600,
-                      color: line.net > 0 ? '#1D4ED8' : line.net < 0 ? '#DC2626' : '#6B7280'
+                      color: line.net > 0 ? '#1D4ED8' : line.net < 0 ? '#DC2626' : '#374151'
                     }}>
                       {net(line.net)}
                     </td>
