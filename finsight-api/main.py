@@ -196,3 +196,88 @@ async def get_validation(upload_id: str):
             "BR001 Bank reconciliation HDFC + KVB Rs.0.00 diff",
         ]
     }
+
+# ── Real file upload + parse endpoint ─────────────────────────────
+from fastapi import UploadFile, File
+import tempfile, uuid, os
+
+@app.post("/api/upload")
+async def upload_file(file: UploadFile = File(...)):
+    """Upload a Tally XLS file and parse it into Supabase."""
+    import parser as tally_parser
+
+    # Validate file type
+    ext = os.path.splitext(file.filename or '')[1].lower()
+    if ext not in ('.xls', '.xlsx', '.csv'):
+        return {"error": f"File type {ext} not supported. Use .xls, .xlsx, or .csv"}
+
+    # Save to temp file
+    upload_id = str(uuid.uuid4())
+    tmp_path = f"/tmp/{upload_id}{ext}"
+
+    content = await file.read()
+    with open(tmp_path, 'wb') as f:
+        f.write(content)
+
+    try:
+        # Parse the file
+        parsed = tally_parser.parse_xls(tmp_path)
+
+        # Save upload record to Supabase
+        sb = get_sb()
+        sb.table('uploads').insert({
+            'id':            upload_id,
+            'org_id':        'mudduluru-ka',
+            'filename':      file.filename,
+            'status':        'parsed',
+            'file_size_bytes': len(content),
+            'row_count':     parsed['total_rows'],
+            'voucher_count': parsed['voucher_count'],
+            'ledger_count':  parsed['ledger_count'],
+        }).execute()
+
+        # Save vouchers and ledgers to Supabase
+        if parsed['voucher_count'] > 0:
+            save_result = tally_parser.save_to_supabase(parsed, 'mudduluru-ka', upload_id, sb)
+        else:
+            save_result = {'vouchers_inserted': 0, 'ledgers_upserted': 0}
+
+        # Clean up temp file
+        os.unlink(tmp_path)
+
+        return {
+            'upload_id':         upload_id,
+            'filename':          file.filename,
+            'status':            'parsed',
+            'total_rows':        parsed['total_rows'],
+            'voucher_count':     parsed['voucher_count'],
+            'ledger_count':      parsed['ledger_count'],
+            'vouchers_inserted': save_result['vouchers_inserted'],
+            'ledgers_upserted':  save_result['ledgers_upserted'],
+            'message':           f"Successfully parsed {parsed['voucher_count']} vouchers from {parsed['total_rows']} rows",
+        }
+
+    except Exception as e:
+        if os.path.exists(tmp_path):
+            os.unlink(tmp_path)
+        return {"error": str(e), "upload_id": upload_id}
+
+
+@app.get("/api/uploads/{org_id}")
+async def get_uploads(org_id: str):
+    """List all uploads for an org."""
+    sb = get_sb()
+    result = sb.table('uploads').select('*').eq('org_id', org_id).order('created_at', desc=True).execute()
+    return {"uploads": result.data}
+
+
+@app.get("/api/vouchers/{upload_id}")
+async def get_vouchers(upload_id: str, limit: int = 100):
+    """Get vouchers for a specific upload."""
+    sb = get_sb()
+    result = sb.table('vouchers').select('*').eq('upload_id', upload_id).limit(limit).execute()
+    return {
+        "upload_id": upload_id,
+        "count": len(result.data),
+        "vouchers": result.data
+    }
