@@ -1201,3 +1201,59 @@ async def get_fast_trial_balance(upload_id: str):
         'total_vouchers_processed': sum(1 for _ in lines),
         'lines': lines,
     }
+
+
+@app.get("/api/fast/trial-balance-v2/{upload_id}")
+async def get_fast_trial_balance_v2(upload_id: str):
+    """Trial Balance via direct SQL aggregation with pagination bypass."""
+    sb = get_sb()
+
+    # Fetch all vouchers in batches then aggregate in Python
+    # This is faster than multiple RPC calls
+    all_vouchers = []
+    offset = 0
+    while True:
+        batch = sb.table('vouchers').select(
+            'ledger_name,debit,credit'
+        ).eq('upload_id', upload_id).range(offset, offset + 999).execute().data
+        if not batch:
+            break
+        all_vouchers.extend(batch)
+        if len(batch) < 1000:
+            break
+        offset += 1000
+
+    # Aggregate by ledger
+    ledger_totals = {}
+    for v in all_vouchers:
+        name = v['ledger_name']
+        if name not in ledger_totals:
+            ledger_totals[name] = {'debit': 0.0, 'credit': 0.0}
+        ledger_totals[name]['debit']  += float(v['debit']  or 0)
+        ledger_totals[name]['credit'] += float(v['credit'] or 0)
+
+    total_dr = round(sum(v['debit']  for v in ledger_totals.values()), 2)
+    total_cr = round(sum(v['credit'] for v in ledger_totals.values()), 2)
+    diff     = round(abs(total_dr - total_cr), 2)
+
+    lines = sorted([
+        {
+            'ledger_name':  name,
+            'total_debit':  round(v['debit'], 2),
+            'total_credit': round(v['credit'], 2),
+            'net':          round(v['debit'] - v['credit'], 2),
+        }
+        for name, v in ledger_totals.items()
+        if v['debit'] > 0 or v['credit'] > 0
+    ], key=lambda x: x['total_debit'], reverse=True)
+
+    return {
+        'upload_id':                upload_id,
+        'total_dr':                 total_dr,
+        'total_cr':                 total_cr,
+        'diff':                     diff,
+        'tb001_status':             'PASS' if diff < 0.50 else 'FAIL',
+        'ledger_count':             len(lines),
+        'total_vouchers_processed': len(all_vouchers),
+        'lines':                    lines,
+    }
