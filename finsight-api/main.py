@@ -1068,3 +1068,136 @@ async def get_real_kpis(upload_id: str):
         'od':               od,
         'term_loans':       term_loans,
     }
+
+
+# ── SQL-powered fast endpoints ─────────────────────────────────────
+
+@app.get("/api/fast/kpis/{upload_id}")
+async def get_fast_kpis(upload_id: str):
+    """KPIs via single SQL function — replaces 31 batch fetches."""
+    sb = get_sb()
+    result = sb.rpc('get_kpis', {
+        'p_upload_id': upload_id,
+        'p_org_id': 'mudduluru-ka'
+    }).execute()
+
+    data = result.data
+    if not data:
+        return {"error": "No data found"}
+
+    r = data
+    revenue      = float(r.get('revenue', 0))
+    material     = float(r.get('material_cost', 0))
+    direct       = float(r.get('direct_cost', 0))
+    direct_lab   = float(r.get('direct_labour', 0))
+    emp          = float(r.get('employee_cost', 0))
+    admin        = float(r.get('admin_cost', 0))
+    finance      = float(r.get('finance_cost', 0))
+
+    gross_profit = round(revenue - material - direct - direct_lab, 2)
+    ebitda       = round(gross_profit - emp - admin, 2)
+    pat          = round(ebitda - finance, 2)
+
+    gp_pct    = round(gross_profit / revenue * 100, 1) if revenue else 0
+    ebitda_pct = round(ebitda / revenue * 100, 1) if revenue else 0
+    pat_pct   = round(pat / revenue * 100, 1) if revenue else 0
+
+    return {
+        'upload_id':         upload_id,
+        'total_vouchers':    int(r.get('total_vouchers', 0)),
+        'period':            'FY 2025-26',
+        'revenue':           revenue,
+        'gross_profit':      gross_profit,
+        'gp_margin_pct':     gp_pct,
+        'ebitda':            ebitda,
+        'ebitda_margin_pct': ebitda_pct,
+        'pat':               pat,
+        'pat_margin_pct':    pat_pct,
+        'cash':              float(r.get('cash', 0)),
+        'debtors':           float(r.get('debtors', 0)),
+        'creditors':         float(r.get('creditors', 0)),
+        'od':                float(r.get('od', 0)),
+        'term_loans':        float(r.get('term_loans', 0)),
+    }
+
+
+@app.get("/api/fast/pl/{upload_id}")
+async def get_fast_pl(upload_id: str):
+    """P&L via single SQL function."""
+    sb = get_sb()
+    result = sb.rpc('get_pl', {
+        'p_upload_id': upload_id,
+        'p_org_id': 'mudduluru-ka'
+    }).execute()
+
+    r = result.data
+    if not r:
+        return {"error": "No data found"}
+
+    revenue      = float(r.get('revenue', 0))
+    other_income = float(r.get('other_income', 0))
+    total_income = round(revenue + other_income, 2)
+    material     = float(r.get('material_cost', 0))
+    direct       = float(r.get('direct_cost', 0))
+    direct_lab   = float(r.get('direct_labour', 0))
+    total_cogs   = round(material + direct + direct_lab, 2)
+    gross_profit = round(total_income - total_cogs, 2)
+    emp          = float(r.get('employee_cost', 0))
+    admin        = float(r.get('admin_cost', 0))
+    opex         = round(emp + admin, 2)
+    ebitda       = round(gross_profit - opex, 2)
+    finance      = float(r.get('finance_cost', 0))
+    pat          = round(ebitda - finance, 2)
+
+    gp_pct     = round(gross_profit / total_income * 100, 1) if total_income else 0
+    ebitda_pct = round(ebitda / total_income * 100, 1) if total_income else 0
+    pat_pct    = round(pat / total_income * 100, 1) if total_income else 0
+
+    return {
+        'upload_id':         upload_id,
+        'total_vouchers':    int(r.get('total_vouchers', 0)),
+        'period':            'FY 2025-26',
+        'company':           'Mudduluru Infratech Pvt. Ltd. (KA)',
+        'revenue':           revenue,
+        'other_income':      other_income,
+        'total_income':      total_income,
+        'material_cost':     material,
+        'direct_cost':       direct,
+        'direct_labour':     direct_lab,
+        'total_cogs':        total_cogs,
+        'gross_profit':      gross_profit,
+        'gp_margin_pct':     gp_pct,
+        'employee_cost':     emp,
+        'admin_cost':        admin,
+        'opex':              opex,
+        'ebitda':            ebitda,
+        'ebitda_margin_pct': ebitda_pct,
+        'finance_cost':      finance,
+        'pat':               pat,
+        'pat_margin_pct':    pat_pct,
+    }
+
+
+@app.get("/api/fast/trial-balance/{upload_id}")
+async def get_fast_trial_balance(upload_id: str):
+    """Trial Balance via SQL aggregation — single query."""
+    sb = get_sb()
+    result = sb.rpc('get_trial_balance', {
+        'p_upload_id': upload_id
+    }).execute()
+
+    lines = result.data or []
+    total_dr = round(sum(float(l.get('total_debit', 0)) for l in lines), 2)
+    total_cr = round(sum(float(l.get('total_credit', 0)) for l in lines), 2)
+    diff     = round(abs(total_dr - total_cr), 2)
+
+    return {
+        'upload_id':    upload_id,
+        'total_dr':     total_dr,
+        'total_cr':     total_cr,
+        'diff':         diff,
+        'tb001_status': 'PASS' if diff < 0.50 else 'FAIL',
+        'ledger_count': len(lines),
+        'total_vouchers_processed': sum(1 for _ in lines),
+        'lines': lines,
+    }

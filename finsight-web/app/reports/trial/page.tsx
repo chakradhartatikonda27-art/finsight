@@ -11,7 +11,7 @@ export default function TrialBalancePage() {
 
   useEffect(() => {
     const API = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
-    fetch(`${API}/api/reports/real/trial-balance-full/${UPLOAD_ID}`)
+    fetch(`${API}/api/fast/trial-balance/${UPLOAD_ID}`)
       .then(r => r.json())
       .then(d => { setData(d); setLoading(false) })
   }, [])

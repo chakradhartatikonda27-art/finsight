@@ -20,7 +20,7 @@ export default function PLPage() {
 
   useEffect(() => {
     const API = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
-    fetch(`${API}/api/reports/real/pl-v2/${UPLOAD_ID}`)
+    fetch(`${API}/api/fast/pl/${UPLOAD_ID}`)
       .then(r => r.json())
       .then(d => { setData(d); setLoading(false) })
   }, [])

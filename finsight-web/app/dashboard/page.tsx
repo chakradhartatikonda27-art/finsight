@@ -16,7 +16,7 @@ export default function Dashboard() {
   useEffect(() => {
     const API = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
     Promise.all([
-      fetch(`${API}/api/reports/real/kpis/${UPLOAD_ID}`).then(r => r.json()),
+      fetch(`${API}/api/fast/kpis/${UPLOAD_ID}`).then(r => r.json()),
       fetch(`${API}/api/reports/sites`).then(r => r.json()),
     ]).then(([kpiData, sitesData]) => {
       setKpis(kpiData)
