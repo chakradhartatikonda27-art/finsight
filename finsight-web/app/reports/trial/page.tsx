@@ -20,14 +20,12 @@ export default function TrialBalancePage() {
     !search || l.ledger_name.toLowerCase().includes(search.toLowerCase())
   )
 
-  const formatCr = (val: number) => {
-    if (!val) return '—'
-    return '₹' + (val / 10000000).toFixed(2) + ' Cr'
+  function fmt(val: number): string {
+    return Math.abs(val).toLocaleString('en-IN', { minimumFractionDigits: 2 })
   }
 
-  const formatAmt = (val: number) => {
-    if (!val || val === 0) return '—'
-    return val.toLocaleString('en-IN', { minimumFractionDigits: 2 })
+  function fmtCr(val: number): string {
+    return `₹${(Math.abs(val) / 10000000).toFixed(2)} Cr`
   }
 
   return (
@@ -44,33 +42,28 @@ export default function TrialBalancePage() {
             {loading ? 'Loading...' : `${data?.ledger_count} ledgers · ${data?.total_vouchers_processed?.toLocaleString('en-IN')} vouchers`}
           </span>
         </div>
-        <div style={{ display:'flex', gap:8 }}>
-          {!loading && (
-            <span style={{
-              background: data?.tb001_status === 'PASS' ? '#ECFDF5' : '#FEF2F2',
-              color: data?.tb001_status === 'PASS' ? '#059669' : '#DC2626',
-              fontSize:11, fontWeight:600, padding:'4px 12px', borderRadius:20
-            }}>
-              TB001 {data?.tb001_status} · Diff ₹{data?.diff?.toFixed(2)}
-            </span>
-          )}
-        </div>
+        {!loading && (
+          <span style={{
+            background: data?.tb001_status==='PASS' ? '#ECFDF5' : '#FEF2F2',
+            color: data?.tb001_status==='PASS' ? '#059669' : '#DC2626',
+            fontSize:11, fontWeight:600, padding:'4px 12px', borderRadius:20
+          }}>
+            TB001 {data?.tb001_status} · Diff ₹{data?.diff?.toFixed(2)}
+          </span>
+        )}
       </div>
 
       <div style={{ padding:'24px', fontFamily:'system-ui' }}>
 
-        {/* Summary cards */}
-        <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr 1fr 1fr', gap:12, marginBottom:24 }}>
+        {/* Summary */}
+        <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr 1fr 1fr', gap:12, marginBottom:20 }}>
           {[
-            { label:'Total Debit',         value: loading ? '...' : formatCr(data?.total_dr),     color:'#2563EB' },
-            { label:'Total Credit',        value: loading ? '...' : formatCr(data?.total_cr),     color:'#7C3AED' },
-            { label:'Difference',          value: loading ? '...' : `₹${data?.diff?.toFixed(2)}`, color: data?.diff === 0 ? '#059669' : '#DC2626' },
-            { label:'Vouchers Processed',  value: loading ? '...' : data?.total_vouchers_processed?.toLocaleString('en-IN'), color:'#0891B2' },
+            { label:'Total Debit',        value: loading?'...':fmtCr(data?.total_dr),   color:'#2563EB' },
+            { label:'Total Credit',       value: loading?'...':fmtCr(data?.total_cr),   color:'#7C3AED' },
+            { label:'Difference',         value: loading?'...': `₹${data?.diff?.toFixed(2)}`, color: data?.diff===0?'#059669':'#DC2626' },
+            { label:'Vouchers Processed', value: loading?'...': data?.total_vouchers_processed?.toLocaleString('en-IN'), color:'#0891B2' },
           ].map(k => (
-            <div key={k.label} style={{
-              background:'#fff', border:'1px solid #E5E7EB',
-              borderRadius:12, padding:'14px 16px', borderTop:`3px solid ${k.color}`
-            }}>
+            <div key={k.label} style={{ background:'#fff', border:'1px solid #E5E7EB', borderRadius:10, padding:'14px 16px', borderTop:`3px solid ${k.color}` }}>
               <div style={{ fontSize:9, fontWeight:700, color:'#6B7280', textTransform:'uppercase', letterSpacing:'.07em', marginBottom:6 }}>{k.label}</div>
               <div style={{ fontSize:20, fontWeight:800, color:k.color }}>{k.value}</div>
             </div>
@@ -78,101 +71,86 @@ export default function TrialBalancePage() {
         </div>
 
         {/* Search */}
-        <div style={{ marginBottom:16 }}>
-          <input
-            type="text"
-            placeholder="Search ledger name..."
-            value={search}
-            onChange={e => setSearch(e.target.value)}
-            style={{
-              width:'100%', padding:'9px 14px', borderRadius:8,
-              border:'1px solid #E5E7EB', fontSize:13,
-              outline:'none', boxSizing:'border-box'
-            }}
-          />
-        </div>
+        <input
+          type="text"
+          placeholder="Search ledger name..."
+          value={search}
+          onChange={e => setSearch(e.target.value)}
+          style={{ width:'100%', padding:'9px 14px', borderRadius:8, border:'1px solid #E5E7EB', fontSize:13, outline:'none', marginBottom:16, boxSizing:'border-box' }}
+        />
 
-        {/* Loading state */}
         {loading && (
-          <div style={{ background:'#EFF6FF', border:'1px solid #BFDBFE', borderRadius:12, padding:'20px', textAlign:'center', marginBottom:16 }}>
-            <div style={{ fontSize:13, color:'#1D4ED8', fontWeight:600 }}>
-              ⏳ Fetching all 30,490 vouchers from Supabase...
-            </div>
-            <div style={{ fontSize:11, color:'#6B7280', marginTop:4 }}>
-              Processing in batches — takes 3-5 seconds
-            </div>
+          <div style={{ background:'#EFF6FF', border:'1px solid #BFDBFE', borderRadius:10, padding:'16px 20px', marginBottom:16, fontSize:12, color:'#1D4ED8', fontWeight:600 }}>
+            ⏳ Fetching all 30,490 vouchers from Supabase... takes 10-15 seconds
           </div>
         )}
 
-        {/* Trial Balance Table */}
+        {/* Table */}
         {!loading && (
           <div style={{ background:'#fff', border:'1px solid #E5E7EB', borderRadius:12, overflow:'hidden' }}>
-            <div style={{ background:'#1F3864', padding:'12px 16px', color:'#fff', fontWeight:700, fontSize:13, display:'flex', justifyContent:'space-between' }}>
+            <div style={{ background:'#1F3864', padding:'12px 20px', color:'#fff', fontWeight:700, fontSize:13, display:'flex', justifyContent:'space-between' }}>
               <span>Trial Balance — FY 2025-26 · {lines.length} ledgers shown</span>
-              <span style={{ fontSize:11, fontWeight:400, opacity:.7 }}>Real data · 30,490 vouchers</span>
+              <span style={{ fontSize:11, opacity:.7 }}>Real data · 30,490 vouchers</span>
             </div>
-            <table style={{ width:'100%', borderCollapse:'collapse', fontSize:12 }}>
-              <thead>
-                <tr style={{ background:'#F8FAFC' }}>
-                  {['#','Ledger Name','Total Debit (₹)','Total Credit (₹)','Net (₹)'].map(h => (
-                    <th key={h} style={{
-                      padding:'8px 14px',
-                      textAlign: ['Total Debit (₹)','Total Credit (₹)','Net (₹)'].includes(h) ? 'right' : 'left',
-                      fontSize:10, fontWeight:700, color:'#6B7280',
-                      textTransform:'uppercase', letterSpacing:'.06em',
-                      borderBottom:'1px solid #E5E7EB'
-                    }}>{h}</th>
+            <div style={{ overflowX:'auto' }}>
+              <table style={{ width:'100%', borderCollapse:'collapse', fontSize:12, minWidth:800 }}>
+                <thead>
+                  <tr style={{ background:'#F8FAFC' }}>
+                    <th style={{ padding:'10px 16px', textAlign:'left', fontSize:10, fontWeight:700, color:'#6B7280', textTransform:'uppercase', borderBottom:'1px solid #E5E7EB', width:40 }}>#</th>
+                    <th style={{ padding:'10px 16px', textAlign:'left', fontSize:10, fontWeight:700, color:'#6B7280', textTransform:'uppercase', borderBottom:'1px solid #E5E7EB' }}>Ledger Name</th>
+                    <th style={{ padding:'10px 16px', textAlign:'right', fontSize:10, fontWeight:700, color:'#6B7280', textTransform:'uppercase', borderBottom:'1px solid #E5E7EB', width:200 }}>Total Debit (₹)</th>
+                    <th style={{ padding:'10px 16px', textAlign:'right', fontSize:10, fontWeight:700, color:'#6B7280', textTransform:'uppercase', borderBottom:'1px solid #E5E7EB', width:200 }}>Total Credit (₹)</th>
+                    <th style={{ padding:'10px 16px', textAlign:'right', fontSize:10, fontWeight:700, color:'#6B7280', textTransform:'uppercase', borderBottom:'1px solid #E5E7EB', width:180 }}>Net (₹)</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {lines.map((line: any, i: number) => (
+                    <tr key={i} style={{ borderBottom:'0.5px solid #F3F4F6', background: i%2===0?'#fff':'#FAFAFA' }}>
+                      <td style={{ padding:'9px 16px', color:'#9CA3AF', fontSize:11 }}>{i+1}</td>
+                      <td style={{ padding:'9px 16px', fontWeight:500, color:'#1F3864' }}>{line.ledger_name}</td>
+                      <td style={{ padding:'9px 16px', textAlign:'right', fontFamily:'monospace', fontSize:12 }}>
+                        {line.total_debit > 0 ? fmt(line.total_debit) : '—'}
+                      </td>
+                      <td style={{ padding:'9px 16px', textAlign:'right', fontFamily:'monospace', fontSize:12 }}>
+                        {line.total_credit > 0 ? fmt(line.total_credit) : '—'}
+                      </td>
+                      <td style={{ padding:'9px 16px', textAlign:'right', fontFamily:'monospace', fontSize:12, fontWeight:600,
+                        color: line.net > 0 ? '#1F3864' : line.net < 0 ? '#DC2626' : '#6B7280'
+                      }}>
+                        {line.net !== 0 ? fmt(Math.abs(line.net)) + (line.net < 0 ? ' Cr' : ' Dr') : '—'}
+                      </td>
+                    </tr>
                   ))}
-                </tr>
-              </thead>
-              <tbody>
-                {lines.map((line: any, i: number) => (
-                  <tr key={i} style={{ borderBottom:'0.5px solid #F3F4F6', background: i % 2 === 0 ? '#fff' : '#FAFAFA' }}>
-                    <td style={{ padding:'8px 14px', color:'#9CA3AF', fontSize:11 }}>{i+1}</td>
-                    <td style={{ padding:'8px 14px', fontWeight:500 }}>{line.ledger_name}</td>
-                    <td style={{ padding:'8px 14px', textAlign:'right', fontFamily:'monospace' }}>
-                      {formatAmt(line.total_debit)}
+                </tbody>
+                <tfoot>
+                  <tr style={{ background:'#1F3864' }}>
+                    <td colSpan={2} style={{ padding:'12px 16px', color:'#fff', fontWeight:700, fontSize:13 }}>
+                      TOTAL ({data?.ledger_count} ledgers)
                     </td>
-                    <td style={{ padding:'8px 14px', textAlign:'right', fontFamily:'monospace' }}>
-                      {formatAmt(line.total_credit)}
+                    <td style={{ padding:'12px 16px', textAlign:'right', fontFamily:'monospace', color:'#fff', fontWeight:700, fontSize:13 }}>
+                      {fmt(data?.total_dr)}
                     </td>
-                    <td style={{ padding:'8px 14px', textAlign:'right', fontFamily:'monospace', fontWeight:600,
-                      color: line.net > 0 ? '#1F3864' : line.net < 0 ? '#DC2626' : '#6B7280'
+                    <td style={{ padding:'12px 16px', textAlign:'right', fontFamily:'monospace', color:'#fff', fontWeight:700, fontSize:13 }}>
+                      {fmt(data?.total_cr)}
+                    </td>
+                    <td style={{ padding:'12px 16px', textAlign:'right', fontFamily:'monospace', fontWeight:700, fontSize:13,
+                      color: data?.diff===0 ? '#A7F3D0' : '#FCA5A5'
                     }}>
-                      {line.net !== 0 ? formatAmt(Math.abs(line.net)) + (line.net < 0 ? ' Cr' : ' Dr') : '—'}
+                      {data?.diff===0 ? '✓ ₹0.00' : `⚠ ₹${data?.diff}`}
                     </td>
                   </tr>
-                ))}
-              </tbody>
-              <tfoot>
-                <tr style={{ background:'#1F3864' }}>
-                  <td colSpan={2} style={{ padding:'10px 14px', color:'#fff', fontWeight:700 }}>
-                    TOTAL ({data?.ledger_count} ledgers)
-                  </td>
-                  <td style={{ padding:'10px 14px', textAlign:'right', fontFamily:'monospace', color:'#fff', fontWeight:700 }}>
-                    {formatAmt(data?.total_dr)}
-                  </td>
-                  <td style={{ padding:'10px 14px', textAlign:'right', fontFamily:'monospace', color:'#fff', fontWeight:700 }}>
-                    {formatAmt(data?.total_cr)}
-                  </td>
-                  <td style={{ padding:'10px 14px', textAlign:'right', fontFamily:'monospace', fontWeight:700,
-                    color: data?.diff === 0 ? '#A7F3D0' : '#FCA5A5'
-                  }}>
-                    {data?.diff === 0 ? '✓ ₹0.00' : `⚠ ₹${data?.diff}`}
-                  </td>
-                </tr>
-              </tfoot>
-            </table>
+                </tfoot>
+              </table>
+            </div>
           </div>
         )}
 
         {!loading && (
-          <div style={{ marginTop:12 }}>
-            <div style={{ background:'#ECFDF5', border:'1px solid #A7F3D0', borderRadius:10, padding:'12px 16px', fontSize:11, color:'#059669' }}>
-              ✓ TB001 PASS — Total DR ₹{formatCr(data?.total_dr)} = Total CR ₹{formatCr(data?.total_cr)} — Difference ₹{data?.diff?.toFixed(2)} — All 30,490 real vouchers processed
-            </div>
+          <div style={{ marginTop:12, background:'#ECFDF5', border:'1px solid #A7F3D0', borderRadius:10, padding:'12px 16px', fontSize:11, color:'#059669' }}>
+            ✓ TB001 PASS — Total DR ₹{fmtCr(data?.total_dr)} = Total CR ₹{fmtCr(data?.total_cr)} — Difference ₹{data?.diff?.toFixed(2)} — All 30,490 real vouchers processed
           </div>
         )}
+
       </div>
     </Layout>
   )
