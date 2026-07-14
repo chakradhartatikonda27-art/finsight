@@ -8,7 +8,6 @@ export default function TrialBalancePage() {
   const [data, setData] = useState<any>(null)
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
-  const [view, setView] = useState<'cr'|'full'>('cr')
 
   useEffect(() => {
     const API = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
@@ -21,17 +20,8 @@ export default function TrialBalancePage() {
     !search || l.ledger_name.toLowerCase().includes(search.toLowerCase())
   )
 
-  function fmtFull(val: number): string {
-    return Math.abs(val).toLocaleString('en-IN', { minimumFractionDigits: 2 })
-  }
-
-  function fmtCr(val: number): string {
-    return `${(Math.abs(val) / 10000000).toFixed(2)} Cr`
-  }
-
-  function fmt(val: number): string {
-    return view === 'cr' ? fmtCr(val) : fmtFull(val)
-  }
+  const cr = (v: number) => v > 0 ? `${(v/10000000).toFixed(2)} Cr` : '—'
+  const net = (v: number) => v === 0 ? '—' : `${(Math.abs(v)/10000000).toFixed(2)} Cr ${v < 0 ? 'CR' : 'DR'}`
 
   return (
     <Layout>
@@ -44,7 +34,7 @@ export default function TrialBalancePage() {
         <div>
           <span style={{ fontWeight:700, color:'#1F3864', fontSize:14 }}>Trial Balance</span>
           <span style={{ color:'#6B7280', fontSize:12, marginLeft:12 }}>
-            {loading ? 'Loading...' : `${data?.ledger_count} ledgers · ${data?.total_vouchers_processed?.toLocaleString('en-IN')} vouchers`}
+            {loading ? 'Loading...' : `${data?.ledger_count} ledgers · ${data?.total_vouchers_processed?.toLocaleString('en-IN')} vouchers · Amounts in Crores`}
           </span>
         </div>
         {!loading && (
@@ -60,41 +50,31 @@ export default function TrialBalancePage() {
 
       <div style={{ padding:'24px', fontFamily:'system-ui' }}>
 
-        {/* Summary */}
         <div style={{ display:'grid', gridTemplateColumns:'repeat(4,1fr)', gap:12, marginBottom:20 }}>
           {[
-            { label:'Total Debit',        value: loading?'...': `₹${fmtCr(data?.total_dr)}`, color:'#2563EB' },
-            { label:'Total Credit',       value: loading?'...': `₹${fmtCr(data?.total_cr)}`, color:'#7C3AED' },
-            { label:'Difference',         value: loading?'...': `₹${data?.diff?.toFixed(2)}`, color: data?.diff===0?'#059669':'#DC2626' },
+            { label:'Total Debit',        value: loading?'...': `₹${(data?.total_dr/10000000).toFixed(2)} Cr`, color:'#2563EB' },
+            { label:'Total Credit',       value: loading?'...': `₹${(data?.total_cr/10000000).toFixed(2)} Cr`, color:'#7C3AED' },
+            { label:'Difference',         value: loading?'...': `₹${data?.diff?.toFixed(2)}`,                  color: data?.diff===0?'#059669':'#DC2626' },
             { label:'Vouchers Processed', value: loading?'...': data?.total_vouchers_processed?.toLocaleString('en-IN'), color:'#0891B2' },
           ].map(k => (
             <div key={k.label} style={{ background:'#fff', border:'1px solid #E5E7EB', borderRadius:10, padding:'14px 16px', borderTop:`3px solid ${k.color}` }}>
               <div style={{ fontSize:9, fontWeight:700, color:'#6B7280', textTransform:'uppercase', letterSpacing:'.07em', marginBottom:6 }}>{k.label}</div>
-              <div style={{ fontSize:20, fontWeight:800, color:k.color }}>{k.value}</div>
+              <div style={{ fontSize:18, fontWeight:800, color:k.color }}>{k.value}</div>
             </div>
           ))}
         </div>
 
-        {/* Search + toggle */}
-        <div style={{ display:'flex', gap:10, marginBottom:16 }}>
-          <input
-            type="text"
-            placeholder="Search ledger name..."
-            value={search}
-            onChange={e => setSearch(e.target.value)}
-            style={{ flex:1, padding:'9px 14px', borderRadius:8, border:'1px solid #E5E7EB', fontSize:13, outline:'none' }}
-          />
-          <button
-            onClick={() => setView(v => v==='cr'?'full':'cr')}
-            style={{ padding:'9px 16px', borderRadius:8, border:'1px solid #E5E7EB', background:'#fff', fontSize:12, fontWeight:600, cursor:'pointer', color:'#1F3864', whiteSpace:'nowrap' }}
-          >
-            {view==='cr' ? 'Show Full ₹' : 'Show in Cr'}
-          </button>
-        </div>
+        <input
+          type="text"
+          placeholder="Search ledger name..."
+          value={search}
+          onChange={e => setSearch(e.target.value)}
+          style={{ width:'100%', padding:'9px 14px', borderRadius:8, border:'1px solid #E5E7EB', fontSize:13, outline:'none', marginBottom:16, boxSizing:'border-box' }}
+        />
 
         {loading && (
           <div style={{ background:'#EFF6FF', border:'1px solid #BFDBFE', borderRadius:10, padding:'16px 20px', marginBottom:16, fontSize:12, color:'#1D4ED8', fontWeight:600 }}>
-            ⏳ Fetching all 30,490 vouchers from Supabase... takes 10-15 seconds
+            ⏳ Fetching all 30,490 vouchers... takes 10-15 seconds
           </div>
         )}
 
@@ -102,22 +82,22 @@ export default function TrialBalancePage() {
           <div style={{ background:'#fff', border:'1px solid #E5E7EB', borderRadius:12, overflow:'hidden' }}>
             <div style={{ background:'#1F3864', padding:'12px 20px', color:'#fff', fontWeight:700, fontSize:13, display:'flex', justifyContent:'space-between' }}>
               <span>Trial Balance — FY 2025-26 · {lines.length} ledgers</span>
-              <span style={{ fontSize:11, opacity:.7 }}>Amounts in {view==='cr'?'Crores':'₹'} · TB001 {data?.tb001_status}</span>
+              <span style={{ fontSize:11, opacity:.7 }}>All amounts in ₹ Crores</span>
             </div>
-            <table style={{ width:'100%', borderCollapse:'collapse', fontSize:12, tableLayout:'fixed' }}>
+            <table style={{ width:'100%', borderCollapse:'collapse', fontSize:13, tableLayout:'fixed' }}>
               <colgroup>
-                <col style={{ width:'36px' }} />
-                <col style={{ width:'40%' }} />
-                <col style={{ width:'20%' }} />
-                <col style={{ width:'20%' }} />
-                <col style={{ width:'20%' }} />
+                <col style={{ width:'44px' }} />
+                <col />
+                <col style={{ width:'130px' }} />
+                <col style={{ width:'130px' }} />
+                <col style={{ width:'140px' }} />
               </colgroup>
               <thead>
                 <tr style={{ background:'#F8FAFC' }}>
-                  <th style={{ padding:'10px 12px', textAlign:'left', fontSize:10, fontWeight:700, color:'#6B7280', textTransform:'uppercase', borderBottom:'1px solid #E5E7EB' }}>#</th>
-                  <th style={{ padding:'10px 12px', textAlign:'left', fontSize:10, fontWeight:700, color:'#6B7280', textTransform:'uppercase', borderBottom:'1px solid #E5E7EB' }}>Ledger Name</th>
-                  <th style={{ padding:'10px 12px', textAlign:'right', fontSize:10, fontWeight:700, color:'#6B7280', textTransform:'uppercase', borderBottom:'1px solid #E5E7EB' }}>Debit</th>
-                  <th style={{ padding:'10px 12px', textAlign:'right', fontSize:10, fontWeight:700, color:'#6B7280', textTransform:'uppercase', borderBottom:'1px solid #E5E7EB' }}>Credit</th>
+                  <th style={{ padding:'10px 12px', textAlign:'left',  fontSize:10, fontWeight:700, color:'#6B7280', textTransform:'uppercase', borderBottom:'1px solid #E5E7EB' }}>#</th>
+                  <th style={{ padding:'10px 12px', textAlign:'left',  fontSize:10, fontWeight:700, color:'#6B7280', textTransform:'uppercase', borderBottom:'1px solid #E5E7EB' }}>Ledger Name</th>
+                  <th style={{ padding:'10px 12px', textAlign:'right', fontSize:10, fontWeight:700, color:'#6B7280', textTransform:'uppercase', borderBottom:'1px solid #E5E7EB' }}>Debit (Cr)</th>
+                  <th style={{ padding:'10px 12px', textAlign:'right', fontSize:10, fontWeight:700, color:'#6B7280', textTransform:'uppercase', borderBottom:'1px solid #E5E7EB' }}>Credit (Cr)</th>
                   <th style={{ padding:'10px 12px', textAlign:'right', fontSize:10, fontWeight:700, color:'#6B7280', textTransform:'uppercase', borderBottom:'1px solid #E5E7EB' }}>Net</th>
                 </tr>
               </thead>
@@ -128,34 +108,30 @@ export default function TrialBalancePage() {
                     <td style={{ padding:'8px 12px', fontWeight:500, color:'#1F3864', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }} title={line.ledger_name}>
                       {line.ledger_name}
                     </td>
-                    <td style={{ padding:'8px 12px', textAlign:'right', fontFamily:'monospace', fontSize:11 }}>
-                      {line.total_debit > 0 ? fmt(line.total_debit) : '—'}
+                    <td style={{ padding:'8px 12px', textAlign:'right', fontFamily:'monospace', fontSize:12 }}>
+                      {cr(line.total_debit)}
                     </td>
-                    <td style={{ padding:'8px 12px', textAlign:'right', fontFamily:'monospace', fontSize:11 }}>
-                      {line.total_credit > 0 ? fmt(line.total_credit) : '—'}
+                    <td style={{ padding:'8px 12px', textAlign:'right', fontFamily:'monospace', fontSize:12 }}>
+                      {cr(line.total_credit)}
                     </td>
-                    <td style={{ padding:'8px 12px', textAlign:'right', fontFamily:'monospace', fontSize:11, fontWeight:600,
+                    <td style={{ padding:'8px 12px', textAlign:'right', fontFamily:'monospace', fontSize:12, fontWeight:600,
                       color: line.net > 0 ? '#1D4ED8' : line.net < 0 ? '#DC2626' : '#6B7280'
                     }}>
-                      {line.net !== 0 ? fmt(Math.abs(line.net)) + (line.net < 0 ? ' Cr' : ' Dr') : '—'}
+                      {net(line.net)}
                     </td>
                   </tr>
                 ))}
               </tbody>
               <tfoot>
                 <tr style={{ background:'#1F3864' }}>
-                  <td colSpan={2} style={{ padding:'10px 12px', color:'#fff', fontWeight:700 }}>
-                    TOTAL — {data?.ledger_count} ledgers
+                  <td colSpan={2} style={{ padding:'10px 12px', color:'#fff', fontWeight:700 }}>TOTAL — {data?.ledger_count} ledgers</td>
+                  <td style={{ padding:'10px 12px', textAlign:'right', fontFamily:'monospace', color:'#fff', fontWeight:700 }}>
+                    {(data?.total_dr/10000000).toFixed(2)} Cr
                   </td>
                   <td style={{ padding:'10px 12px', textAlign:'right', fontFamily:'monospace', color:'#fff', fontWeight:700 }}>
-                    {fmt(data?.total_dr)}
+                    {(data?.total_cr/10000000).toFixed(2)} Cr
                   </td>
-                  <td style={{ padding:'10px 12px', textAlign:'right', fontFamily:'monospace', color:'#fff', fontWeight:700 }}>
-                    {fmt(data?.total_cr)}
-                  </td>
-                  <td style={{ padding:'10px 12px', textAlign:'right', fontFamily:'monospace', fontWeight:700,
-                    color: data?.diff===0 ? '#A7F3D0' : '#FCA5A5'
-                  }}>
+                  <td style={{ padding:'10px 12px', textAlign:'right', fontFamily:'monospace', fontWeight:700, color: data?.diff===0?'#A7F3D0':'#FCA5A5' }}>
                     {data?.diff===0 ? '✓ 0.00' : `⚠ ${data?.diff}`}
                   </td>
                 </tr>
@@ -166,10 +142,9 @@ export default function TrialBalancePage() {
 
         {!loading && (
           <div style={{ marginTop:12, background:'#ECFDF5', border:'1px solid #A7F3D0', borderRadius:10, padding:'12px 16px', fontSize:11, color:'#059669' }}>
-            ✓ TB001 PASS — DR ₹{fmtCr(data?.total_dr)} = CR ₹{fmtCr(data?.total_cr)} — Diff ₹{data?.diff?.toFixed(2)} — {data?.total_vouchers_processed?.toLocaleString('en-IN')} vouchers
+            ✓ TB001 PASS — DR ₹{(data?.total_dr/10000000).toFixed(2)} Cr = CR ₹{(data?.total_cr/10000000).toFixed(2)} Cr — Diff ₹{data?.diff?.toFixed(2)} — {data?.total_vouchers_processed?.toLocaleString('en-IN')} vouchers processed
           </div>
         )}
-
       </div>
     </Layout>
   )
