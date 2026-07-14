@@ -1322,7 +1322,7 @@ async def upload_file_async(file: UploadFile = File(...)):
 
     # Start background parse
     thread = threading.Thread(
-        target=_background_parse,
+        target=_background_parse_v2,
         args=(upload_id, content, file.filename),
         daemon=True
     )
@@ -1346,3 +1346,71 @@ async def get_upload_status(upload_id: str):
         return result.data
     except Exception as e:
         return {"error": str(e)}
+
+
+# Override background parse with better error handling
+def _background_parse_v2(upload_id: str, file_content: bytes, filename: str):
+    """Parse file in background — with full error logging."""
+    import tempfile, os, traceback
+    ext = os.path.splitext(filename)[1].lower()
+    tmp_path = f"/tmp/{upload_id}{ext}"
+    try:
+        print(f"[PARSE] Starting parse for {filename} upload_id={upload_id}")
+        with open(tmp_path, 'wb') as f:
+            f.write(file_content)
+
+        import parser as tally_parser
+        parsed = tally_parser.parse_xls(tmp_path)
+        print(f"[PARSE] Parsed {parsed['voucher_count']} vouchers, {parsed['ledger_count']} ledgers")
+
+        if os.path.exists(tmp_path):
+            os.unlink(tmp_path)
+
+        sb = get_sb()
+
+        # Insert vouchers in batches of 1000
+        vouchers = parsed['vouchers']
+        inserted = 0
+        for i in range(0, len(vouchers), 1000):
+            batch = [dict(v, org_id='mudduluru-ka', upload_id=upload_id) for v in vouchers[i:i+1000]]
+            try:
+                sb.table('vouchers').insert(batch).execute()
+                inserted += len(batch)
+                print(f"[PARSE] Inserted {inserted}/{len(vouchers)} vouchers")
+            except Exception as e:
+                print(f"[PARSE] Batch insert error: {e}")
+
+        # Upsert ledgers — ignore duplicates
+        for ledger in parsed['ledgers']:
+            try:
+                sb.table('ledger_mappings').upsert({
+                    'org_id':       'mudduluru-ka',
+                    'ledger_name':  ledger['ledger_name'],
+                    'tally_group':  ledger.get('tally_group', 'Unknown'),
+                    'mis_head':     None,
+                    'confidence':   0,
+                    'confirmed':    False,
+                }, on_conflict='org_id,ledger_name').execute()
+            except Exception as e:
+                print(f"[PARSE] Ledger upsert error: {e}")
+
+        # Update upload status
+        sb.table('uploads').update({
+            'status':        'parsed',
+            'row_count':     parsed['total_rows'],
+            'voucher_count': parsed['voucher_count'],
+            'ledger_count':  parsed['ledger_count'],
+        }).eq('id', upload_id).execute()
+        print(f"[PARSE] Complete — {inserted} vouchers inserted")
+
+    except Exception as e:
+        print(f"[PARSE ERROR] {traceback.format_exc()}")
+        try:
+            get_sb().table('uploads').update({
+                'status': 'error',
+                'error_message': str(e)[:300]
+            }).eq('id', upload_id).execute()
+        except:
+            pass
+        if os.path.exists(tmp_path):
+            os.unlink(tmp_path)
