@@ -43,7 +43,7 @@ def _background_parse_and_cache(upload_id: str, content: bytes, filename: str, o
         }).eq("id", upload_id).execute()
 
         # Step 3: Cache all reports for fast page loads
-        from routers.reports import compute_and_cache_all(upload_id, org_id, sb)
+        from routers.reports import compute_and_cache_all
 
         # Step 4: Update status to validated
         sb.table("uploads").update({
